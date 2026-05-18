@@ -1,0 +1,15 @@
+{
+    "name": "MCA Digital Twin",
+    "short_name": "DigiTwin",
+    "start_url": "/",
+    "display": "standalone",
+    "background_color": "#f4f7f6",
+    "theme_color": "#2b6cb0",
+    "icons": [
+        {
+            "src": "manju.png",
+            "sizes": "512x512",
+            "type": "image/png"
+        }
+    ]
+}
