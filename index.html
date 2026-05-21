@@ -5,7 +5,6 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Department Spatial Hub :: Digital Twin [Dual-Mode Build]</title>
-    <link rel="manifest" href="./manifest.json">
     <style>
         body {
             margin: 0;
@@ -196,7 +195,6 @@
         <p class="ui-text" id="mode-status">Camera: FIRST-PERSON Walkthrough</p>
         <p class="ui-text">Render: ENTERPRISE PBR v8.3</p>
         <button id="camera-toggle" class="tech-btn">SWITCH TO ORBITAL OVERVIEW</button>
-        <!-- The VR Button will be automatically injected here by the script -->
     </div>
 
     <div id="hardware-layer" class="hub-overlay">
@@ -438,29 +436,18 @@
         createBox("Wall_Inner_Prof_Top_L_T", 12.0, upperY, 8.0, 4.8, halfH, t, matMainTech, true);
         createBox("Wall_Inner_Prof_Top_R_T", 7.6, upperY, 8.0, 0.8, halfH, t, matMainTech, true);
 
-        // --- FUN ADDITION: MANJU THE GUIDE ---
+        // --- EASTER EGG: MANJU THE GUIDE ---
         // const manjuTexture = textureLoader.load('./manju.png');
-
-        // // Using MeshBasicMaterial with transparent: true so the background cuts out
         // const manjuMaterial = new THREE.MeshBasicMaterial({
         //     map: manjuTexture,
         //     transparent: true,
-        //     side: THREE.DoubleSide // Makes sure you can see him from behind the chair too!
+        //     side: THREE.DoubleSide
         // });
-
-        // // Creates a 2D plane (roughly scaled to human torso size)
         // const manjuGeometry = new THREE.PlaneGeometry(0.6, 0.8);
         // const manjuMesh = new THREE.Mesh(manjuGeometry, manjuMaterial);
-
-        // // Exact coordinates to place him hovering right on the seat of the Professor's chair
-        // manjuMesh.position.set(10.0, 0.6, 4.1);
-
-
-        // // Match the chair's rotation so he is facing the desk perfectly
+        // manjuMesh.position.set(10.0, 1, 4.1);
         // manjuMesh.rotation.y = Math.PI / 4;
-
         // scene.add(manjuMesh);
-        // -------------------------------------
 
         // 6. ROOM ACTUATOR ARCHITECTURE
         const roomCoordinates = {
@@ -712,9 +699,10 @@
 
         function animate() {
             const time = performance.now();
+            const delta = (time - prevTime) / 1000;
 
+            // --- DESKTOP FIRST PERSON MOVEMENT ---
             if (currentMode === 'FP' && fpControls.isLocked === true && !renderer.xr.isPresenting) {
-                const delta = (time - prevTime) / 1000;
                 velocity.x -= velocity.x * 10.0 * delta;
                 velocity.z -= velocity.z * 10.0 * delta;
                 direction.z = Number(moveForward) - Number(moveBackward);
@@ -728,6 +716,41 @@
                 orbitControls.update();
             }
 
+            // --- VR THUMBSTICK LOCOMOTION (QUEST COMPATIBLE) ---
+            if (renderer.xr.isPresenting) {
+                const session = renderer.xr.getSession();
+                if (session && session.inputSources) {
+                    for (const source of session.inputSources) {
+                        if (source.gamepad) {
+                            // Map the LEFT controller's analog stick for walking
+                            if (source.handedness === 'left') {
+                                const xAxis = source.gamepad.axes[2]; // Left/Right axis
+                                const yAxis = source.gamepad.axes[3]; // Forward/Backward axis
+
+                                const walkSpeed = 3.5; // Meters per second
+
+                                const headDirection = new THREE.Vector3();
+                                camera.getWorldDirection(headDirection);
+                                headDirection.y = 0; // Prevent flying/clipping through floor
+                                headDirection.normalize();
+
+                                const rightDirection = new THREE.Vector3();
+                                rightDirection.crossVectors(camera.up, headDirection).normalize();
+
+                                // 0.1 Deadzone handles analog stick drift automatically
+                                if (Math.abs(yAxis) > 0.1) {
+                                    cameraRig.position.addScaledVector(headDirection, -yAxis * walkSpeed * delta);
+                                }
+                                if (Math.abs(xAxis) > 0.1) {
+                                    cameraRig.position.addScaledVector(rightDirection, xAxis * walkSpeed * delta);
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            // Actuator Rotations
             for (const state of Object.values(roomsData)) {
                 if (state.fanRunning && state.fanMesh) state.fanMesh.rotation.y += 0.4;
             }
