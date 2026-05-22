@@ -9,7 +9,7 @@
         body {
             margin: 0;
             overflow: hidden;
-            background-color: #f4f7f6;
+            background-color: #87CEEB;
             font-family: 'SF Mono', 'Roboto Mono', monospace;
         }
 
@@ -22,7 +22,7 @@
             position: absolute;
             width: 100%;
             height: 100%;
-            background-color: rgba(244, 247, 246, 0.95);
+            background-color: rgba(135, 206, 235, 0.95);
             display: flex;
             flex-direction: column;
             align-items: center;
@@ -44,7 +44,7 @@
         #blocker p {
             font-size: 18px;
             margin-top: 15px;
-            color: #4a5568;
+            color: #2d3748;
         }
 
         /* UNIFIED FROSTED-GLASS CSS */
@@ -237,15 +237,89 @@
         import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
         import { VRButton } from 'three/addons/webxr/VRButton.js';
 
-        // COLLISION ARRAY
+        // --- NEW: ROOM DIRECTORY DATA ---
+        // (We keep the data object because the Nameplates still need to read from it!)
+        const roomDirectory = {
+            inventory: { title: "INVENTORY", personnel: ["Admin: Facility Manager"] },
+            hod: { title: "HOD OFFICE", personnel: ["HOD: Dr. Ajitha"] },
+            prof: { title: "PROF. ROOM", personnel: ["Dr. Manjunath"] },
+            hall: { title: "STAFF HALL", personnel: ["Prof. Dan Shiju", "Prof. Aman Mathew", "Prof. Kailas Shankar", "Prof. Ashwin"] }
+        };
+
+        // --- DYNAMIC DOOR SIGNAGE (3D MESH) ---
+        function createDoorNameplate(room, x, y, z, rotY) {
+            const dir = roomDirectory[room];
+            if (!dir) return;
+
+            // Build the canvas texture
+            const canvas = document.createElement('canvas');
+            canvas.width = 512;
+            canvas.height = 256;
+            const ctx = canvas.getContext('2d');
+
+            // Background
+            ctx.fillStyle = '#1a202c';
+            ctx.beginPath();
+            ctx.roundRect(0, 0, 512, 256, 16);
+            ctx.fill();
+
+            // Accent bar
+            const accentColors = { inventory: '#2b6cb0', hod: '#805ad5', prof: '#38a169', hall: '#dd6b20' };
+            ctx.fillStyle = accentColors[room] || '#2b6cb0';
+            ctx.fillRect(0, 0, 10, 256);
+
+            // Title
+            ctx.fillStyle = '#ffffff';
+            ctx.font = 'bold 48px monospace';
+            ctx.fillText(dir.title, 36, 72);
+
+            // Divider line
+            ctx.strokeStyle = '#4a5568';
+            ctx.lineWidth = 2;
+            ctx.beginPath();
+            ctx.moveTo(36, 90);
+            ctx.lineTo(476, 90);
+            ctx.stroke();
+
+            // Personnel list
+            ctx.fillStyle = '#a0aec0';
+            ctx.font = '32px monospace';
+            dir.personnel.forEach((name, i) => {
+                ctx.fillText(name, 36, 140 + i * 44);
+            });
+
+            const texture = new THREE.CanvasTexture(canvas);
+
+
+            // Physical plaque mesh — 0.5m wide, 0.25m tall
+            const plaque = new THREE.Mesh(
+                new THREE.PlaneGeometry(0.5, 0.25),
+                new THREE.MeshStandardMaterial({
+                    map: texture,
+                    roughness: 0.5,
+                    metalness: 0.1,
+                    emissive: 0xffffff,
+                    emissiveIntensity: 0.3,
+                    side: THREE.DoubleSide
+                })
+            );
+
+            plaque.position.set(x, y, z);
+            plaque.rotation.y = rotY;
+            scene.add(plaque);
+        }
+
+        // COLLISION & RAYCAST ARRAYS
         const wallBoundingBoxes = [];
+        const interactiveMeshes = [];
+        const doors = [];
 
         // 1. SCENE SETUP
         const scene = new THREE.Scene();
-        scene.background = new THREE.Color('#f4f7f6');
-        scene.fog = new THREE.Fog('#f4f7f6', 5, 100);
+        scene.background = new THREE.Color('#87CEEB');
+        scene.fog = new THREE.Fog('#87CEEB', 5, 120);
 
-        // 2. CAMERA SETUP (VR Rig Enabled)
+        // 2. CAMERA SETUP
         const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
         camera.position.set(0, 1.6, 0);
 
@@ -255,7 +329,7 @@
         cameraRig.add(camera);
         scene.add(cameraRig);
 
-        // 3. RENDERER SETUP (WebXR Enabled)
+        // 3. RENDERER SETUP
         const renderer = new THREE.WebGLRenderer({ antialias: true });
         renderer.setPixelRatio(window.devicePixelRatio);
         renderer.setSize(window.innerWidth, window.innerHeight);
@@ -284,11 +358,40 @@
         document.getElementById('ui-layer').appendChild(vrButton);
         document.body.appendChild(renderer.domElement);
 
+        // --- VR GAZE TOOLTIPS ---
+        function createVRTooltip(textStr) {
+            const canvas = document.createElement('canvas');
+            canvas.width = 512; canvas.height = 128;
+            const ctx = canvas.getContext('2d');
+            ctx.fillStyle = 'rgba(0, 0, 0, 0.8)';
+            ctx.beginPath();
+            ctx.roundRect(0, 0, 512, 128, 20);
+            ctx.fill();
+            ctx.fillStyle = '#ffffff';
+            ctx.font = 'bold 36px monospace';
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            ctx.fillText(textStr, 256, 64);
+
+            const tex = new THREE.CanvasTexture(canvas);
+            const mat = new THREE.SpriteMaterial({ map: tex, transparent: true, depthTest: false });
+            const sprite = new THREE.Sprite(mat);
+            sprite.scale.set(1.2, 0.3, 1);
+            sprite.renderOrder = 999;
+            sprite.visible = false;
+            scene.add(sprite);
+            return sprite;
+        }
+
+        const tooltipFan = createVRTooltip("[ Press X to Toggle ]");
+        const tooltipLight = createVRTooltip("[ Press A to Toggle ]");
+        const gazeRaycaster = new THREE.Raycaster();
+
         // --- DYNAMIC ROOF SAFETY FOR VR ---
         renderer.xr.addEventListener('sessionstart', () => { roofGroup.visible = true; });
         renderer.xr.addEventListener('sessionend', () => { if (currentMode === 'ORBIT') roofGroup.visible = false; });
 
-        // --- META QUEST CONTROLLER MAPPING ---
+        // --- META QUEST CONTROLLERS ---
         const controller1 = renderer.xr.getController(0);
         const controller2 = renderer.xr.getController(1);
         scene.add(controller1);
@@ -301,8 +404,8 @@
         labelRenderer.domElement.style.pointerEvents = 'none';
         document.body.appendChild(labelRenderer.domElement);
 
-        // 4. LIGHTING SETUP (Hemisphere Bounce Lighting Enabled)
-        const ambientLight = new THREE.AmbientLight(0xffffff, 0.7); // Brightened base layer
+        // 4. LIGHTING SETUP 
+        const ambientLight = new THREE.AmbientLight(0xffffff, 0.7);
         scene.add(ambientLight);
 
         const hemiLight = new THREE.HemisphereLight(0xffffff, 0xe2e8f0, 0.4);
@@ -352,6 +455,7 @@
         [brickColor, brickNormal, brickRoughness].forEach(tex => { tex.wrapS = THREE.RepeatWrapping; tex.wrapT = THREE.RepeatWrapping; tex.repeat.set(4, 2); });
         const matBrickTech = new THREE.MeshStandardMaterial({ map: brickColor, normalMap: brickNormal, roughnessMap: brickRoughness, metalness: 0.0 });
 
+        // --- RESTORED GRID GROUND ---
         const gridHelper = new THREE.GridHelper(100, 50, 0xcbd5e0, 0xe2e8f0);
         gridHelper.position.set(7.2, -0.04, 8.8);
         scene.add(gridHelper);
@@ -435,6 +539,80 @@
         createBox("Wall_Inner_Prof_Top_L_T", 12.0, upperY, 8.0, 4.8, halfH, t, matMainTech, true);
         createBox("Wall_Inner_Prof_Top_R_T", 7.6, upperY, 8.0, 0.8, halfH, t, matMainTech, true);
 
+        // --- NEW: REALISTIC DOUBLE AUTO-DOORS ---
+        const doorColor = textureLoader.load('door_color.jpg');
+        doorColor.wrapS = THREE.RepeatWrapping; doorColor.wrapT = THREE.RepeatWrapping; doorColor.repeat.set(1, 2);
+        const matDoorTech = new THREE.MeshStandardMaterial({ map: doorColor, metalness: 0.1, roughness: 0.7 });
+
+        function createDoubleDoor(centerX, centerZ, width, isZAxis = false) {
+            const halfW = width / 2;
+            const doorHeight = 2.0;
+            const gapHeight = 2.4 - doorHeight;
+            const doorThick = 0.08;
+
+            if (!isZAxis) {
+                createBox("Door_Header", centerX, doorHeight + (gapHeight / 2), centerZ, width, gapHeight, doorThick, matMainTech);
+            } else {
+                createBox("Door_Header", centerX, doorHeight + (gapHeight / 2), centerZ, doorThick, gapHeight, width, matMainTech);
+            }
+
+            const leftGroup = new THREE.Group();
+            const rightGroup = new THREE.Group();
+
+            leftGroup.position.set(isZAxis ? centerX : centerX - halfW, doorHeight / 2, isZAxis ? centerZ - halfW : centerZ);
+            rightGroup.position.set(isZAxis ? centerX : centerX + halfW, doorHeight / 2, isZAxis ? centerZ + halfW : centerZ);
+
+            const panelGeo = isZAxis ? new THREE.BoxGeometry(doorThick, doorHeight, halfW) : new THREE.BoxGeometry(halfW, doorHeight, doorThick);
+
+            const leftPanel = new THREE.Mesh(panelGeo, matDoorTech);
+            const rightPanel = new THREE.Mesh(panelGeo, matDoorTech);
+
+            leftPanel.position.set(isZAxis ? 0 : halfW / 2, 0, isZAxis ? halfW / 2 : 0);
+            rightPanel.position.set(isZAxis ? 0 : -halfW / 2, 0, isZAxis ? -halfW / 2 : 0);
+
+            leftPanel.castShadow = true; leftPanel.receiveShadow = true;
+            rightPanel.castShadow = true; rightPanel.receiveShadow = true;
+
+            leftGroup.add(leftPanel);
+            rightGroup.add(rightPanel);
+            scene.add(leftGroup);
+            scene.add(rightGroup);
+
+            const centerVec = new THREE.Vector3(centerX, doorHeight / 2, centerZ);
+            let swingL = -Math.PI / 2;
+            let swingR = Math.PI / 2;
+
+            if (!isZAxis && centerZ > 10) {
+                swingL = Math.PI / 2; swingR = -Math.PI / 2;
+            } else if (!isZAxis && centerZ < 5) {
+                swingL = -Math.PI / 2; swingR = Math.PI / 2;
+            } else if (isZAxis) {
+                swingL = Math.PI / 2; swingR = -Math.PI / 2;
+            }
+
+            doors.push({ group: leftGroup, center: centerVec, closedRot: 0, openRot: swingL });
+            doors.push({ group: rightGroup, center: centerVec, closedRot: 0, openRot: swingR });
+        }
+
+        // Generate the double doors
+        createDoubleDoor(8.8, 11.2, 1.6, false); // Inventory
+        createDoubleDoor(5.6, 11.2, 1.6, false); // HOD Office
+        createDoubleDoor(8.8, 8.0, 1.6, false);  // Professor Room
+        createDoubleDoor(4.0, 5.6, 1.6, true);   // Staff Hall
+
+        // --- NAMEPLATE POSITIONING (TRULY FIXED) ---
+        // Wall thickness is 0.2 (so 0.1 from center). We add 0.01 for a safe gap to prevent Z-fighting.
+        const zInvHod = 11.2 - 0.11; // 11.09 (Faces -Z into the corridor)
+        const zProf = 8.0 + 0.11;    // 8.11 (Faces +Z into the corridor)
+        const xHall = 4.0 + 0.11;    // 4.11 (Faces +X into the corridor)
+
+        // Params: roomID, X, Y, Z, Rotation
+        createDoorNameplate('inventory', 10.0, 1.5, zInvHod, Math.PI);
+        createDoorNameplate('hod', 4.4, 1.5, zInvHod, Math.PI);
+        createDoorNameplate('prof', 10.0, 1.5, zProf, 0);
+        createDoorNameplate('hall', xHall, 1.5, 6.8, Math.PI / 2);
+        // ------------------------------------
+
         // --- DYNAMIC ROOF SYSTEM ---
         const roofGroup = new THREE.Group();
         scene.add(roofGroup);
@@ -460,12 +638,15 @@
 
         // --- EASTER EGG: MANJU THE GUIDE ---
         const manjuTexture = textureLoader.load('./manju.png');
-        const manjuMaterial = new THREE.MeshBasicMaterial({ map: manjuTexture, transparent: true, side: THREE.DoubleSide });
-        const manjuGeometry = new THREE.PlaneGeometry(0.6, 0.8);
-        const manjuMesh = new THREE.Mesh(manjuGeometry, manjuMaterial);
-        manjuMesh.position.set(10.0, 0.6, 4.1);
-        manjuMesh.rotation.y = Math.PI / 4;
-        scene.add(manjuMesh);
+        const manjuMaterial = new THREE.SpriteMaterial({
+            map: manjuTexture,
+            transparent: true,
+            depthTest: true
+        });
+        const manjuSprite = new THREE.Sprite(manjuMaterial);
+        manjuSprite.scale.set(1.2, 1.68, 1.2);
+        manjuSprite.position.set(10.0, 0.6, 3.8);
+        scene.add(manjuSprite);
 
         // 6. ROOM ACTUATOR ARCHITECTURE
         const roomCoordinates = {
@@ -499,7 +680,14 @@
                 const fanClone = gltf.scene.clone();
                 fanClone.position.set(coords.x, 2.3, coords.z);
                 fanClone.scale.set(0.3, 0.3, 0.3);
-                fanClone.traverse((child) => { if (child.isMesh) { child.castShadow = true; child.receiveShadow = true; } });
+                fanClone.userData.isFan = true;
+                fanClone.traverse((child) => {
+                    if (child.isMesh) {
+                        child.castShadow = true;
+                        child.receiveShadow = true;
+                        interactiveMeshes.push(child);
+                    }
+                });
                 scene.add(fanClone);
                 roomsData[roomId].fanMesh = fanClone;
             }
@@ -508,7 +696,14 @@
         gltfLoader.load('tubelight.glb', (gltf) => {
             for (const [roomId, coords] of Object.entries(roomCoordinates)) {
                 const tubeClone = gltf.scene.clone();
-                tubeClone.traverse((child) => { if (child.isMesh) { child.material = child.material.clone(); child.castShadow = true; } });
+                tubeClone.userData.isLight = true;
+                tubeClone.traverse((child) => {
+                    if (child.isMesh) {
+                        child.material = child.material.clone();
+                        child.castShadow = true;
+                        interactiveMeshes.push(child);
+                    }
+                });
                 tubeClone.scale.set(0.8, 0.8, 0.8);
                 if (roomId === 'prof' || roomId === 'hod' || roomId === 'inventory') {
                     tubeClone.position.set(coords.x, 2.0, coords.z - (roomId === 'prof' ? 3.9 : 3.1));
@@ -537,11 +732,11 @@
 
         gltfLoader.load('office_chair.glb', (gltf) => {
             for (const [roomId, coords] of Object.entries(roomCoordinates)) {
+                if (roomId === 'prof') continue;
                 const chairClone = gltf.scene.clone();
                 chairClone.scale.set(0.011, 0.011, 0.011);
                 const deskX = coords.x - 0.8; const deskZ = coords.z + 0.8;
-                if (roomId === 'prof') { chairClone.position.set(deskX, 0, deskZ - 0.7); chairClone.rotation.y = Math.PI / 4; }
-                else if (roomId === 'hod') { chairClone.position.set(deskX - 0.7, 0, deskZ - 0.7); chairClone.rotation.y = Math.PI / 2; }
+                if (roomId === 'hod') { chairClone.position.set(deskX - 0.7, 0, deskZ - 0.7); chairClone.rotation.y = Math.PI / 2; }
                 else if (roomId === 'inventory') { chairClone.position.set(deskX, 0, deskZ + 0.7); chairClone.rotation.y = Math.PI; }
                 else if (roomId === 'hall') { chairClone.position.set(deskX + 0.7, 0, deskZ + 0.7); chairClone.rotation.y = Math.PI; }
                 chairClone.traverse((child) => { if (child.isMesh) { child.castShadow = true; child.receiveShadow = true; } });
@@ -638,7 +833,7 @@
         const fanToggleBtn = document.getElementById('fan-toggle-btn');
         const lightToggleBtn = document.getElementById('light-toggle-btn');
 
-        const ESP32_IP = "http://10.157.219.234";
+        const FIREBASE_URL = "https://YOUR-FIREBASE-PROJECT.firebasedatabase.app/appliances.json";
 
         function updateActuatorUI() {
             const state = roomsData[activeZone];
@@ -655,32 +850,47 @@
         }
 
         roomSelector.addEventListener('change', (event) => {
-            activeZone = event.target.value; updateActuatorUI();
+            activeZone = event.target.value;
+            updateActuatorUI();
         });
 
         fanToggleBtn.addEventListener('click', async () => {
             roomsData[activeZone].fanRunning = !roomsData[activeZone].fanRunning;
             const isRunning = roomsData[activeZone].fanRunning;
             updateActuatorUI();
+
             if (activeZone === 'inventory') {
                 try {
-                    const response = await fetch(`${ESP32_IP}/fan?state=${isRunning ? 'on' : 'off'}`);
-                    console.log(`Hardware Response: ${await response.text()}`);
-                } catch (error) { console.warn("Hardware command failed."); }
+                    await fetch(FIREBASE_URL, {
+                        method: 'PATCH',
+                        body: JSON.stringify({ fan: isRunning })
+                    });
+                } catch (error) { console.warn("Cloud sync failed."); }
             }
         });
 
-        lightToggleBtn.addEventListener('click', () => {
+        lightToggleBtn.addEventListener('click', async () => {
             const state = roomsData[activeZone];
             state.lightOn = !state.lightOn;
+            const isLightOn = state.lightOn;
+
             if (state.lightOn) {
-                state.pointLight.intensity = 6.0; // Boosted intensity
+                state.pointLight.intensity = 6.0;
                 if (state.lightMesh) state.lightMesh.traverse((child) => { if (child.isMesh) { child.material.emissive.setHex(0xffffff); child.material.emissiveIntensity = 3.0; } });
             } else {
                 state.pointLight.intensity = 0;
                 if (state.lightMesh) state.lightMesh.traverse((child) => { if (child.isMesh) { child.material.emissive.setHex(0x000000); child.material.emissiveIntensity = 0; } });
             }
             updateActuatorUI();
+
+            if (activeZone === 'inventory') {
+                try {
+                    await fetch(FIREBASE_URL, {
+                        method: 'PATCH',
+                        body: JSON.stringify({ light: isLightOn })
+                    });
+                } catch (error) { console.warn("Cloud sync failed."); }
+            }
         });
 
         document.addEventListener('keydown', (event) => {
@@ -709,7 +919,7 @@
         let leftFaceBtnPressed = false;
         let rightFaceBtnPressed = false;
 
-        // 9. ANIMATION LOOP (WebXR Render Loop)
+        // 9. ANIMATION LOOP
         let prevTime = performance.now();
 
         function animate() {
@@ -734,55 +944,98 @@
                 orbitControls.update();
             }
 
-            // --- VR THUMBSTICK & FACE BUTTON LOCOMOTION ---
+            // --- VR LOCOMOTION & GAZE TOOLTIPS ---
             if (renderer.xr.isPresenting) {
                 const session = renderer.xr.getSession();
+
+                let vrMoveZ = 0;
+                let vrMoveX = 0;
+
                 if (session && session.inputSources) {
                     for (const source of session.inputSources) {
                         if (source.gamepad) {
                             if (source.handedness === 'left') {
-                                const xAxis = source.gamepad.axes[2];
-                                const yAxis = source.gamepad.axes[3];
-                                const walkSpeed = 3.5;
-
-                                const headDirection = new THREE.Vector3();
-                                camera.getWorldDirection(headDirection);
-                                headDirection.y = 0;
-                                headDirection.normalize();
-
-                                const rightDirection = new THREE.Vector3();
-                                rightDirection.crossVectors(camera.up, headDirection).normalize();
-
-                                if (Math.abs(yAxis) > 0.1) {
-                                    cameraRig.position.addScaledVector(headDirection, -yAxis * walkSpeed * delta);
-                                }
-                                if (Math.abs(xAxis) > 0.1) {
-                                    cameraRig.position.addScaledVector(rightDirection, xAxis * walkSpeed * delta);
-                                }
+                                if (Math.abs(source.gamepad.axes[3]) > 0.1) vrMoveZ = -source.gamepad.axes[3];
 
                                 if (source.gamepad.buttons[4]?.pressed) {
                                     if (!leftFaceBtnPressed) {
                                         document.getElementById('fan-toggle-btn').click();
                                         leftFaceBtnPressed = true;
                                     }
-                                } else {
-                                    leftFaceBtnPressed = false;
-                                }
+                                } else { leftFaceBtnPressed = false; }
                             }
 
                             if (source.handedness === 'right') {
+                                if (Math.abs(source.gamepad.axes[2]) > 0.1) vrMoveX = source.gamepad.axes[2];
+
                                 if (source.gamepad.buttons[4]?.pressed) {
                                     if (!rightFaceBtnPressed) {
                                         document.getElementById('light-toggle-btn').click();
                                         rightFaceBtnPressed = true;
                                     }
-                                } else {
-                                    rightFaceBtnPressed = false;
-                                }
+                                } else { rightFaceBtnPressed = false; }
                             }
                         }
                     }
                 }
+
+                const walkSpeed = 3.5;
+                const headDirection = new THREE.Vector3();
+                camera.getWorldDirection(headDirection);
+                headDirection.y = 0;
+                headDirection.normalize();
+
+                const rightDirection = new THREE.Vector3();
+                rightDirection.crossVectors(camera.up, headDirection).normalize();
+
+                cameraRig.position.addScaledVector(headDirection, vrMoveZ * walkSpeed * delta);
+                cameraRig.position.addScaledVector(rightDirection, vrMoveX * walkSpeed * delta);
+
+                // --- GAZE TOOLTIP DETECTION ---
+                const headPosForRay = new THREE.Vector3();
+                camera.getWorldPosition(headPosForRay);
+                const headMatrix = new THREE.Matrix4().extractRotation(camera.matrixWorld);
+                const headDirForRay = new THREE.Vector3(0, 0, -1).applyMatrix4(headMatrix);
+
+                gazeRaycaster.set(headPosForRay, headDirForRay);
+                const intersects = gazeRaycaster.intersectObjects(interactiveMeshes, false);
+
+                tooltipFan.visible = false;
+                tooltipLight.visible = false;
+
+                if (intersects.length > 0) {
+                    const hit = intersects[0];
+                    let currentObj = hit.object;
+                    let isFan = false;
+                    let isLight = false;
+
+                    while (currentObj) {
+                        if (currentObj.userData && currentObj.userData.isFan) { isFan = true; break; }
+                        if (currentObj.userData && currentObj.userData.isLight) { isLight = true; break; }
+                        currentObj = currentObj.parent;
+                    }
+
+                    if (isFan) {
+                        tooltipFan.position.copy(hit.point).lerp(headPosForRay, 0.15);
+                        tooltipFan.position.y += 0.2;
+                        tooltipFan.visible = true;
+                    } else if (isLight) {
+                        tooltipLight.position.copy(hit.point).lerp(headPosForRay, 0.15);
+                        tooltipLight.position.y -= 0.3;
+                        tooltipLight.visible = true;
+                    }
+                }
+            }
+
+            // --- AUTO-DOOR PROXIMITY LOGIC ---
+            const playerPos = new THREE.Vector3();
+            camera.getWorldPosition(playerPos);
+
+            for (let i = 0; i < doors.length; i++) {
+                const door = doors[i];
+                const distance = playerPos.distanceTo(door.center);
+                const targetRot = (distance < 3.0) ? door.openRot : door.closedRot;
+                door.group.rotation.y += (targetRot - door.group.rotation.y) * 5.0 * delta;
             }
 
             // --- COLLISION DETECTION ---
@@ -875,8 +1128,8 @@
                 } else {
                     gasReadout.innerText = data.gasLevel + " [CLEAN]";
                     gasReadout.style.color = "#2b6cb0";
-                    scene.background.setHex(0xf4f7f6); scene.fog.color.setHex(0xf4f7f6);
-                    scene.fog.near = 5; scene.fog.far = currentMode === 'FP' ? 100 : 150;
+                    scene.background.setHex(0x87CEEB); scene.fog.color.setHex(0x87CEEB);
+                    scene.fog.near = 5; scene.fog.far = currentMode === 'FP' ? 120 : 150;
                 }
             } catch (error) { }
         }, 2000);
@@ -890,8 +1143,8 @@
             }
             if (event.key === '0') {
                 gasReadout.innerText = "365 [CLEAN - SIMULATED]"; gasReadout.style.color = "#2b6cb0";
-                scene.background.setHex(0xf4f7f6); scene.fog.color.setHex(0xf4f7f6);
-                scene.fog.near = 5; scene.fog.far = currentMode === 'FP' ? 100 : 150;
+                scene.background.setHex(0x87CEEB); scene.fog.color.setHex(0x87CEEB);
+                scene.fog.near = 5; scene.fog.far = currentMode === 'FP' ? 120 : 150;
             }
         });
     </script>
