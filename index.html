@@ -247,59 +247,61 @@
         };
 
         // --- DYNAMIC DOOR SIGNAGE (3D MESH) ---
+        // --- UPGRADED NAMEPLATE GENERATION (HIGH LEGIBILITY) ---
         function createDoorNameplate(room, x, y, z, rotY) {
             const dir = roomDirectory[room];
             if (!dir) return;
 
-            // Build the canvas texture
+            // 1. Double the resolution for crisp VR text
             const canvas = document.createElement('canvas');
-            canvas.width = 512;
-            canvas.height = 256;
+            canvas.width = 1024;
+            canvas.height = 512;
             const ctx = canvas.getContext('2d');
 
-            // Background
+            // Background (Dark Slate)
             ctx.fillStyle = '#1a202c';
             ctx.beginPath();
-            ctx.roundRect(0, 0, 512, 256, 16);
+            ctx.roundRect(0, 0, 1024, 512, 24);
             ctx.fill();
 
-            // Accent bar
-            const accentColors = { inventory: '#2b6cb0', hod: '#805ad5', prof: '#38a169', hall: '#dd6b20' };
-            ctx.fillStyle = accentColors[room] || '#2b6cb0';
-            ctx.fillRect(0, 0, 10, 256);
+            // Accent bar (Brightened colors for better contrast)
+            const accentColors = { inventory: '#4299e1', hod: '#9f7aea', prof: '#48bb78', hall: '#ed8936' };
+            ctx.fillStyle = accentColors[room] || '#4299e1';
+            ctx.fillRect(0, 0, 20, 512);
 
-            // Title
+            // Title (Much larger and bolder)
             ctx.fillStyle = '#ffffff';
-            ctx.font = 'bold 48px monospace';
-            ctx.fillText(dir.title, 36, 72);
+            ctx.font = 'bold 84px monospace';
+            ctx.fillText(dir.title, 60, 110);
 
             // Divider line
-            ctx.strokeStyle = '#4a5568';
-            ctx.lineWidth = 2;
+            ctx.strokeStyle = '#718096';
+            ctx.lineWidth = 4;
             ctx.beginPath();
-            ctx.moveTo(36, 90);
-            ctx.lineTo(476, 90);
+            ctx.moveTo(60, 150);
+            ctx.lineTo(964, 150);
             ctx.stroke();
 
-            // Personnel list
-            ctx.fillStyle = '#a0aec0';
-            ctx.font = '32px monospace';
+            // Personnel list (Larger, brighter text)
+            ctx.fillStyle = '#e2e8f0';
+            ctx.font = '64px monospace';
             dir.personnel.forEach((name, i) => {
-                ctx.fillText(name, 36, 140 + i * 44);
+                ctx.fillText(name, 60, 240 + i * 85);
             });
 
             const texture = new THREE.CanvasTexture(canvas);
 
+            // 2. Hardware-accelerated sharpening for angled viewing
+            texture.anisotropy = renderer.capabilities.getMaxAnisotropy();
+            texture.minFilter = THREE.LinearFilter;
+            texture.magFilter = THREE.LinearFilter;
 
-            // Physical plaque mesh — 0.5m wide, 0.25m tall
+            // 3. Switch to MeshBasicMaterial (Acts like a backlit LED screen)
+            // 4. Increase physical size to 0.7m x 0.35m
             const plaque = new THREE.Mesh(
-                new THREE.PlaneGeometry(0.5, 0.25),
-                new THREE.MeshStandardMaterial({
+                new THREE.PlaneGeometry(0.7, 0.35),
+                new THREE.MeshBasicMaterial({
                     map: texture,
-                    roughness: 0.5,
-                    metalness: 0.1,
-                    emissive: 0xffffff,
-                    emissiveIntensity: 0.3,
                     side: THREE.DoubleSide
                 })
             );
@@ -308,7 +310,6 @@
             plaque.rotation.y = rotY;
             scene.add(plaque);
         }
-
         // COLLISION & RAYCAST ARRAYS
         const wallBoundingBoxes = [];
         const interactiveMeshes = [];
@@ -540,57 +541,76 @@
         createBox("Wall_Inner_Prof_Top_R_T", 7.6, upperY, 8.0, 0.8, halfH, t, matMainTech, true);
 
         // --- NEW: REALISTIC DOUBLE AUTO-DOORS ---
+        // --- UPGRADED: PROXIMITY DOORS WITH HANDLES ---
         const doorColor = textureLoader.load('door_color.jpg');
         doorColor.wrapS = THREE.RepeatWrapping; doorColor.wrapT = THREE.RepeatWrapping; doorColor.repeat.set(1, 2);
         const matDoorTech = new THREE.MeshStandardMaterial({ map: doorColor, metalness: 0.1, roughness: 0.7 });
 
+        // Shiny metal material for the door handles
+        const handleMat = new THREE.MeshStandardMaterial({ color: 0xe2e8f0, metalness: 0.9, roughness: 0.1 });
+
         function createDoubleDoor(centerX, centerZ, width, isZAxis = false) {
             const halfW = width / 2;
-            const doorHeight = 2.0;
+            const doorHeight = 1.95; // Dropped to be closer to standard real-world frames
             const gapHeight = 2.4 - doorHeight;
-            const doorThick = 0.08;
+            const doorThick = 0.04;  // Thinned down to a realistic 4cm door thickness
 
+            // 1. Build the wall header above the door
             if (!isZAxis) {
                 createBox("Door_Header", centerX, doorHeight + (gapHeight / 2), centerZ, width, gapHeight, doorThick, matMainTech);
             } else {
                 createBox("Door_Header", centerX, doorHeight + (gapHeight / 2), centerZ, doorThick, gapHeight, width, matMainTech);
             }
 
+            // 2. Create the hinge groups
             const leftGroup = new THREE.Group();
             const rightGroup = new THREE.Group();
 
             leftGroup.position.set(isZAxis ? centerX : centerX - halfW, doorHeight / 2, isZAxis ? centerZ - halfW : centerZ);
             rightGroup.position.set(isZAxis ? centerX : centerX + halfW, doorHeight / 2, isZAxis ? centerZ + halfW : centerZ);
 
+            // 3. Create the wooden panels
             const panelGeo = isZAxis ? new THREE.BoxGeometry(doorThick, doorHeight, halfW) : new THREE.BoxGeometry(halfW, doorHeight, doorThick);
-
             const leftPanel = new THREE.Mesh(panelGeo, matDoorTech);
             const rightPanel = new THREE.Mesh(panelGeo, matDoorTech);
 
             leftPanel.position.set(isZAxis ? 0 : halfW / 2, 0, isZAxis ? halfW / 2 : 0);
             rightPanel.position.set(isZAxis ? 0 : -halfW / 2, 0, isZAxis ? -halfW / 2 : 0);
-
             leftPanel.castShadow = true; leftPanel.receiveShadow = true;
             rightPanel.castShadow = true; rightPanel.receiveShadow = true;
 
             leftGroup.add(leftPanel);
             rightGroup.add(rightPanel);
+
+            // 4. Create and attach Commercial Metal Door Handles
+            // A long box that pierces through the thin door to act as a push/pull bar on both sides
+            const handleGeo = isZAxis ? new THREE.BoxGeometry(0.12, 0.5, 0.02) : new THREE.BoxGeometry(0.02, 0.5, 0.12);
+
+            const handleL = new THREE.Mesh(handleGeo, handleMat);
+            handleL.position.set(isZAxis ? 0 : halfW - 0.08, -0.1, isZAxis ? halfW - 0.08 : 0);
+            handleL.castShadow = true;
+            leftGroup.add(handleL);
+
+            const handleR = new THREE.Mesh(handleGeo, handleMat);
+            handleR.position.set(isZAxis ? 0 : -halfW + 0.08, -0.1, isZAxis ? -halfW + 0.08 : 0);
+            handleR.castShadow = true;
+            rightGroup.add(handleR);
+
             scene.add(leftGroup);
             scene.add(rightGroup);
 
+            // 5. Door Swing Logic
+            let swingL = -Math.PI / 2; let swingR = Math.PI / 2;
+            if (!isZAxis && centerZ > 10) { swingL = Math.PI / 2; swingR = -Math.PI / 2; }
+            else if (!isZAxis && centerZ < 5) { swingL = -Math.PI / 2; swingR = Math.PI / 2; }
+            else if (isZAxis) { swingL = Math.PI / 2; swingR = -Math.PI / 2; }
+
+            // --- THE "PROPPED OPEN" LOGIC ---
+            // We lock the Left door permanently in its fully open rotation
+            leftGroup.rotation.y = swingL;
+
+            // We only push the Right door into the array, so the proximity sensor only animates that one
             const centerVec = new THREE.Vector3(centerX, doorHeight / 2, centerZ);
-            let swingL = -Math.PI / 2;
-            let swingR = Math.PI / 2;
-
-            if (!isZAxis && centerZ > 10) {
-                swingL = Math.PI / 2; swingR = -Math.PI / 2;
-            } else if (!isZAxis && centerZ < 5) {
-                swingL = -Math.PI / 2; swingR = Math.PI / 2;
-            } else if (isZAxis) {
-                swingL = Math.PI / 2; swingR = -Math.PI / 2;
-            }
-
-            doors.push({ group: leftGroup, center: centerVec, closedRot: 0, openRot: swingL });
             doors.push({ group: rightGroup, center: centerVec, closedRot: 0, openRot: swingR });
         }
 
@@ -600,6 +620,7 @@
         createDoubleDoor(8.8, 8.0, 1.6, false);  // Professor Room
         createDoubleDoor(4.0, 5.6, 1.6, true);   // Staff Hall
 
+
         // --- NAMEPLATE POSITIONING (TRULY FIXED) ---
         // Wall thickness is 0.2 (so 0.1 from center). We add 0.01 for a safe gap to prevent Z-fighting.
         const zInvHod = 11.2 - 0.11; // 11.09 (Faces -Z into the corridor)
@@ -608,7 +629,7 @@
 
         // Params: roomID, X, Y, Z, Rotation
         createDoorNameplate('inventory', 10.0, 1.5, zInvHod, Math.PI);
-        createDoorNameplate('hod', 4.4, 1.5, zInvHod, Math.PI);
+        createDoorNameplate('hod', 7.0, 1.5, zInvHod, Math.PI);
         createDoorNameplate('prof', 10.0, 1.5, zProf, 0);
         createDoorNameplate('hall', xHall, 1.5, 6.8, Math.PI / 2);
         // ------------------------------------
@@ -979,7 +1000,7 @@
                     }
                 }
 
-                const walkSpeed = 3.5;
+                const walkSpeed = 2.0;
                 const headDirection = new THREE.Vector3();
                 camera.getWorldDirection(headDirection);
                 headDirection.y = 0;
