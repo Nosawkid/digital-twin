@@ -1004,14 +1004,20 @@
                 const headDirection = new THREE.Vector3();
                 camera.getWorldDirection(headDirection);
                 headDirection.y = 0;
-                headDirection.normalize();
 
+                // FIX 1: Prevent NaN division to stop the micro-stuttering
+                if (headDirection.lengthSq() > 0.001) {
+                    headDirection.normalize();
+                } else {
+                    headDirection.set(0, 0, -1); // Fallback forward vector
+                }
+
+                // FIX 2: Swap the cross-product order so Right is actually Right
                 const rightDirection = new THREE.Vector3();
-                rightDirection.crossVectors(camera.up, headDirection).normalize();
+                rightDirection.crossVectors(headDirection, camera.up).normalize();
 
                 cameraRig.position.addScaledVector(headDirection, vrMoveZ * walkSpeed * delta);
                 cameraRig.position.addScaledVector(rightDirection, vrMoveX * walkSpeed * delta);
-
                 // --- GAZE TOOLTIP DETECTION ---
                 const headPosForRay = new THREE.Vector3();
                 camera.getWorldPosition(headPosForRay);
