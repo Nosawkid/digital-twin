@@ -88,13 +88,6 @@
             box-sizing: border-box;
         }
 
-        select.tech-btn {
-            margin-top: 0;
-            margin-bottom: 15px;
-            background: rgba(255, 255, 255, 0.9);
-            outline: none;
-        }
-
         /* 1. SYSTEM ARCHITECTURE (Left) */
         #ui-layer {
             top: 20px;
@@ -121,6 +114,18 @@
         #mode-status {
             font-weight: bold;
             color: #dd6b20;
+        }
+
+        /* --- ROOM DIRECTORY (Mid-Left) --- */
+        #directory-layer {
+            top: 250px;
+            left: 20px;
+            border-left: 3px solid #805ad5;
+            min-width: 250px;
+        }
+
+        #directory-layer h2 {
+            color: #805ad5;
         }
 
         /* 2. IOT TELEMETRY (Right) */
@@ -150,6 +155,16 @@
 
         #actuator-layer h2 {
             color: #38a169;
+        }
+
+        #current-zone-display {
+            color: #38a169;
+            font-weight: bold;
+            font-size: 0.95rem;
+            border-bottom: 1px solid #cbd5e0;
+            padding-bottom: 10px;
+            margin-bottom: 15px;
+            text-transform: uppercase;
         }
 
         .actuator-btn {
@@ -184,7 +199,7 @@
 
     <div id="blocker">
         <h1>MCA DEPARTMENT [MSRIT]</h1>
-        <p>Use Mouse to look | W, A, S, D to walk</p>
+        <p>Use Mouse to look | W, A, S, D to walk | E to Interact</p>
         <p style="color: #e53e3e; font-weight: bold; margin-top: 30px;">PRESS [ ESC ] AT ANY TIME TO SHOW YOUR MOUSE
             CURSOR</p>
     </div>
@@ -197,6 +212,14 @@
         <button id="camera-toggle" class="tech-btn">SWITCH TO ORBITAL OVERVIEW</button>
     </div>
 
+    <div id="directory-layer" class="hub-overlay">
+        <h2>ROOM DIRECTORY</h2>
+        <p id="dir-title" class="ui-text" style="color: #805ad5; font-weight: bold; margin-bottom: 12px;">ZONE:
+            INVENTORY</p>
+        <div id="dir-list">
+        </div>
+    </div>
+
     <div id="hardware-layer" class="hub-overlay">
         <h2>IOT TELEMETRY :: SENSORS</h2>
         <p class="ui-text">Inventory Air Quality: <span id="gas-readout" style="color: #2b6cb0;">LOADING...</span></p>
@@ -205,19 +228,14 @@
     <div id="actuator-layer" class="hub-overlay">
         <h2>ACTUATOR CONTROL</h2>
 
-        <select id="room-selector" class="tech-btn" style="border: 1px solid #38a169; color: #38a169;">
-            <option value="inventory">ZONE: INVENTORY</option>
-            <option value="hod">ZONE: HOD OFFICE</option>
-            <option value="prof">ZONE: PROF. ROOM</option>
-            <option value="hall">ZONE: STAFF HALL</option>
-        </select>
+        <p id="current-zone-display">LOCATION: INVENTORY</p>
 
         <p class="ui-text">Zone Fan: <span id="fan-status-text" style="color: #718096; font-weight:bold;">OFF</span></p>
         <p class="ui-text">Zone Light: <span id="light-status-text" style="color: #718096; font-weight:bold;">OFF</span>
         </p>
 
-        <button id="fan-toggle-btn" class="tech-btn actuator-btn">TOGGLE EXHAUST FAN</button>
-        <button id="light-toggle-btn" class="tech-btn actuator-btn">TOGGLE ROOM LIGHT</button>
+        <button id="fan-toggle-btn" class="tech-btn actuator-btn" style="display:none;">TOGGLE EXHAUST FAN</button>
+        <button id="light-toggle-btn" class="tech-btn actuator-btn" style="display:none;">TOGGLE ROOM LIGHT</button>
     </div>
 
     <script type="importmap">
@@ -237,8 +255,13 @@
         import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
         import { VRButton } from 'three/addons/webxr/VRButton.js';
 
-        // --- NEW: ROOM DIRECTORY DATA ---
-        // (We keep the data object because the Nameplates still need to read from it!)
+        // --- GLOBAL ARRAYS & DATA ---
+        const wallBoundingBoxes = [];
+        const interactiveMeshes = [];
+        const doors = [];
+        let activeZone = 'inventory';
+        let currentMode = 'FP';
+
         const roomDirectory = {
             inventory: { title: "INVENTORY", personnel: ["Admin: Facility Manager"] },
             hod: { title: "HOD OFFICE", personnel: ["HOD: Dr. Ajitha"] },
@@ -246,35 +269,29 @@
             hall: { title: "STAFF HALL", personnel: ["Prof. Dan Shiju", "Prof. Aman Mathew", "Prof. Kailas Shankar", "Prof. Ashwin"] }
         };
 
-        // --- DYNAMIC DOOR SIGNAGE (3D MESH) ---
         // --- UPGRADED NAMEPLATE GENERATION (HIGH LEGIBILITY) ---
         function createDoorNameplate(room, x, y, z, rotY) {
             const dir = roomDirectory[room];
             if (!dir) return;
 
-            // 1. Double the resolution for crisp VR text
             const canvas = document.createElement('canvas');
             canvas.width = 1024;
             canvas.height = 512;
             const ctx = canvas.getContext('2d');
 
-            // Background (Dark Slate)
             ctx.fillStyle = '#1a202c';
             ctx.beginPath();
             ctx.roundRect(0, 0, 1024, 512, 24);
             ctx.fill();
 
-            // Accent bar (Brightened colors for better contrast)
             const accentColors = { inventory: '#4299e1', hod: '#9f7aea', prof: '#48bb78', hall: '#ed8936' };
             ctx.fillStyle = accentColors[room] || '#4299e1';
             ctx.fillRect(0, 0, 20, 512);
 
-            // Title (Much larger and bolder)
             ctx.fillStyle = '#ffffff';
             ctx.font = 'bold 84px monospace';
             ctx.fillText(dir.title, 60, 110);
 
-            // Divider line
             ctx.strokeStyle = '#718096';
             ctx.lineWidth = 4;
             ctx.beginPath();
@@ -282,7 +299,6 @@
             ctx.lineTo(964, 150);
             ctx.stroke();
 
-            // Personnel list (Larger, brighter text)
             ctx.fillStyle = '#e2e8f0';
             ctx.font = '64px monospace';
             dir.personnel.forEach((name, i) => {
@@ -290,37 +306,25 @@
             });
 
             const texture = new THREE.CanvasTexture(canvas);
-
-            // 2. Hardware-accelerated sharpening for angled viewing
-            texture.anisotropy = renderer.capabilities.getMaxAnisotropy();
+            texture.anisotropy = 16;
             texture.minFilter = THREE.LinearFilter;
             texture.magFilter = THREE.LinearFilter;
 
-            // 3. Switch to MeshBasicMaterial (Acts like a backlit LED screen)
-            // 4. Increase physical size to 0.7m x 0.35m
             const plaque = new THREE.Mesh(
                 new THREE.PlaneGeometry(0.7, 0.35),
-                new THREE.MeshBasicMaterial({
-                    map: texture,
-                    side: THREE.DoubleSide
-                })
+                new THREE.MeshBasicMaterial({ map: texture, side: THREE.DoubleSide })
             );
 
             plaque.position.set(x, y, z);
             plaque.rotation.y = rotY;
             scene.add(plaque);
         }
-        // COLLISION & RAYCAST ARRAYS
-        const wallBoundingBoxes = [];
-        const interactiveMeshes = [];
-        const doors = [];
 
-        // 1. SCENE SETUP
+        // --- SCENE & CAMERA SETUP ---
         const scene = new THREE.Scene();
         scene.background = new THREE.Color('#87CEEB');
         scene.fog = new THREE.Fog('#87CEEB', 5, 120);
 
-        // 2. CAMERA SETUP
         const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
         camera.position.set(0, 1.6, 0);
 
@@ -330,14 +334,13 @@
         cameraRig.add(camera);
         scene.add(cameraRig);
 
-        // 3. RENDERER SETUP
+        // --- RENDERER SETUP ---
         const renderer = new THREE.WebGLRenderer({ antialias: true });
         renderer.setPixelRatio(window.devicePixelRatio);
         renderer.setSize(window.innerWidth, window.innerHeight);
         renderer.shadowMap.enabled = true;
         renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 
-        // --- CUSTOM VR BUTTON INJECTION ---
         renderer.xr.enabled = true;
         const vrButton = VRButton.createButton(renderer);
         vrButton.style.position = 'static';
@@ -358,6 +361,13 @@
 
         document.getElementById('ui-layer').appendChild(vrButton);
         document.body.appendChild(renderer.domElement);
+
+        const labelRenderer = new CSS2DRenderer();
+        labelRenderer.setSize(window.innerWidth, window.innerHeight);
+        labelRenderer.domElement.style.position = 'absolute';
+        labelRenderer.domElement.style.top = '0px';
+        labelRenderer.domElement.style.pointerEvents = 'none';
+        document.body.appendChild(labelRenderer.domElement);
 
         // --- VR GAZE TOOLTIPS ---
         function createVRTooltip(textStr) {
@@ -384,13 +394,10 @@
             return sprite;
         }
 
-        const tooltipFan = createVRTooltip("[ Press X to Toggle ]");
-        const tooltipLight = createVRTooltip("[ Press A to Toggle ]");
+        const tooltipFan = createVRTooltip("[ Trigger: Toggle Fan ]");
+        const tooltipLight = createVRTooltip("[ Trigger: Toggle Light ]");
+        const tooltipDoor = createVRTooltip("[ Trigger: Use Door ]");
         const gazeRaycaster = new THREE.Raycaster();
-
-        // --- DYNAMIC ROOF SAFETY FOR VR ---
-        renderer.xr.addEventListener('sessionstart', () => { roofGroup.visible = true; });
-        renderer.xr.addEventListener('sessionend', () => { if (currentMode === 'ORBIT') roofGroup.visible = false; });
 
         // --- META QUEST CONTROLLERS ---
         const controller1 = renderer.xr.getController(0);
@@ -398,14 +405,7 @@
         scene.add(controller1);
         scene.add(controller2);
 
-        const labelRenderer = new CSS2DRenderer();
-        labelRenderer.setSize(window.innerWidth, window.innerHeight);
-        labelRenderer.domElement.style.position = 'absolute';
-        labelRenderer.domElement.style.top = '0px';
-        labelRenderer.domElement.style.pointerEvents = 'none';
-        document.body.appendChild(labelRenderer.domElement);
-
-        // 4. LIGHTING SETUP 
+        // --- LIGHTING & TEXTURES ---
         const ambientLight = new THREE.AmbientLight(0xffffff, 0.7);
         scene.add(ambientLight);
 
@@ -418,18 +418,9 @@
         mainLight.castShadow = true;
         mainLight.shadow.mapSize.width = 2048;
         mainLight.shadow.mapSize.height = 2048;
-        mainLight.shadow.camera.near = 0.5;
-        mainLight.shadow.camera.far = 100;
-        mainLight.shadow.camera.left = -30;
-        mainLight.shadow.camera.right = 30;
-        mainLight.shadow.camera.top = 30;
-        mainLight.shadow.camera.bottom = -30;
-        mainLight.shadow.bias = -0.001;
         scene.add(mainLight);
 
-        // 5. ARCHITECTURAL PBR & MULTI-MATERIALS
         const textureLoader = new THREE.TextureLoader();
-
         const floorColor = textureLoader.load('floor_color.jpg');
         const floorNormal = textureLoader.load('floor_normal.jpg');
         const floorRoughness = textureLoader.load('floor_roughness.jpg');
@@ -456,7 +447,11 @@
         [brickColor, brickNormal, brickRoughness].forEach(tex => { tex.wrapS = THREE.RepeatWrapping; tex.wrapT = THREE.RepeatWrapping; tex.repeat.set(4, 2); });
         const matBrickTech = new THREE.MeshStandardMaterial({ map: brickColor, normalMap: brickNormal, roughnessMap: brickRoughness, metalness: 0.0 });
 
-        // --- RESTORED GRID GROUND ---
+        const doorColor = textureLoader.load('door_color.jpg');
+        doorColor.wrapS = THREE.RepeatWrapping; doorColor.wrapT = THREE.RepeatWrapping; doorColor.repeat.set(1, 2);
+        const matDoorTech = new THREE.MeshStandardMaterial({ map: doorColor, metalness: 0.1, roughness: 0.7 });
+
+        // --- ENVIRONMENT ---
         const gridHelper = new THREE.GridHelper(100, 50, 0xcbd5e0, 0xe2e8f0);
         gridHelper.position.set(7.2, -0.04, 8.8);
         scene.add(gridHelper);
@@ -468,6 +463,7 @@
         campusGround.receiveShadow = true;
         scene.add(campusGround);
 
+        // --- WALL GENERATION ---
         function createBox(name, cx, cy, cz, w, h, d, material, createOutline = false) {
             const geometry = new THREE.BoxGeometry(w, h, d);
             const mesh = new THREE.Mesh(geometry, material);
@@ -476,10 +472,8 @@
             mesh.castShadow = true;
             mesh.receiveShadow = true;
             scene.add(mesh);
-
             mesh.updateMatrixWorld();
             if (name.includes("Wall")) wallBoundingBoxes.push(new THREE.Box3().setFromObject(mesh));
-
             if (createOutline) {
                 const outline = new THREE.Mesh(geometry, matWireframe);
                 outline.scale.multiplyScalar(1.001);
@@ -489,11 +483,7 @@
             return mesh;
         }
 
-        const t = 0.2;
-        const h = 2.4;
-        const halfH = h / 2;
-        const lowerY = halfH / 2;
-        const upperY = halfH + (halfH / 2);
+        const t = 0.2; const h = 2.4; const halfH = h / 2; const lowerY = halfH / 2; const upperY = halfH + (halfH / 2);
 
         createBox("Floor_Professor", 10.8, -0.05, 4.0, 7.2, 0.1, 8.0, matFloorTech);
         createBox("Floor_Inventory", 10.8, -0.05, 14.4, 7.2, 0.1, 6.4, matFloorTech);
@@ -540,99 +530,92 @@
         createBox("Wall_Inner_Prof_Top_L_T", 12.0, upperY, 8.0, 4.8, halfH, t, matMainTech, true);
         createBox("Wall_Inner_Prof_Top_R_T", 7.6, upperY, 8.0, 0.8, halfH, t, matMainTech, true);
 
-        // --- NEW: REALISTIC DOUBLE AUTO-DOORS ---
-        // --- UPGRADED: PROXIMITY DOORS WITH HANDLES ---
-        const doorColor = textureLoader.load('door_color.jpg');
-        doorColor.wrapS = THREE.RepeatWrapping; doorColor.wrapT = THREE.RepeatWrapping; doorColor.repeat.set(1, 2);
-        const matDoorTech = new THREE.MeshStandardMaterial({ map: doorColor, metalness: 0.1, roughness: 0.7 });
-
-        // Shiny metal material for the door handles
+        // --- UPGRADED DOORS WITH HANDLES ---
         const handleMat = new THREE.MeshStandardMaterial({ color: 0xe2e8f0, metalness: 0.9, roughness: 0.1 });
-
         function createDoubleDoor(centerX, centerZ, width, isZAxis = false) {
-            const halfW = width / 2;
-            const doorHeight = 1.95; // Dropped to be closer to standard real-world frames
-            const gapHeight = 2.4 - doorHeight;
-            const doorThick = 0.04;  // Thinned down to a realistic 4cm door thickness
+            const halfW = width / 2; const doorHeight = 1.95; const gapHeight = 2.4 - doorHeight; const doorThick = 0.04;
+            if (!isZAxis) createBox("Door_Header", centerX, doorHeight + (gapHeight / 2), centerZ, width, gapHeight, doorThick, matMainTech);
+            else createBox("Door_Header", centerX, doorHeight + (gapHeight / 2), centerZ, doorThick, gapHeight, width, matMainTech);
 
-            // 1. Build the wall header above the door
-            if (!isZAxis) {
-                createBox("Door_Header", centerX, doorHeight + (gapHeight / 2), centerZ, width, gapHeight, doorThick, matMainTech);
-            } else {
-                createBox("Door_Header", centerX, doorHeight + (gapHeight / 2), centerZ, doorThick, gapHeight, width, matMainTech);
-            }
-
-            // 2. Create the hinge groups
-            const leftGroup = new THREE.Group();
-            const rightGroup = new THREE.Group();
-
+            const leftGroup = new THREE.Group(); const rightGroup = new THREE.Group();
             leftGroup.position.set(isZAxis ? centerX : centerX - halfW, doorHeight / 2, isZAxis ? centerZ - halfW : centerZ);
             rightGroup.position.set(isZAxis ? centerX : centerX + halfW, doorHeight / 2, isZAxis ? centerZ + halfW : centerZ);
 
-            // 3. Create the wooden panels
             const panelGeo = isZAxis ? new THREE.BoxGeometry(doorThick, doorHeight, halfW) : new THREE.BoxGeometry(halfW, doorHeight, doorThick);
-            const leftPanel = new THREE.Mesh(panelGeo, matDoorTech);
-            const rightPanel = new THREE.Mesh(panelGeo, matDoorTech);
-
+            const leftPanel = new THREE.Mesh(panelGeo, matDoorTech); const rightPanel = new THREE.Mesh(panelGeo, matDoorTech);
             leftPanel.position.set(isZAxis ? 0 : halfW / 2, 0, isZAxis ? halfW / 2 : 0);
             rightPanel.position.set(isZAxis ? 0 : -halfW / 2, 0, isZAxis ? -halfW / 2 : 0);
-            leftPanel.castShadow = true; leftPanel.receiveShadow = true;
-            rightPanel.castShadow = true; rightPanel.receiveShadow = true;
+            leftPanel.castShadow = true; leftPanel.receiveShadow = true; rightPanel.castShadow = true; rightPanel.receiveShadow = true;
 
-            leftGroup.add(leftPanel);
-            rightGroup.add(rightPanel);
+            leftGroup.add(leftPanel); rightGroup.add(rightPanel);
 
-            // 4. Create and attach Commercial Metal Door Handles
-            // A long box that pierces through the thin door to act as a push/pull bar on both sides
             const handleGeo = isZAxis ? new THREE.BoxGeometry(0.12, 0.5, 0.02) : new THREE.BoxGeometry(0.02, 0.5, 0.12);
+            const handleL = new THREE.Mesh(handleGeo, handleMat); handleL.position.set(isZAxis ? 0 : halfW - 0.08, -0.1, isZAxis ? halfW - 0.08 : 0); handleL.castShadow = true; leftGroup.add(handleL);
+            const handleR = new THREE.Mesh(handleGeo, handleMat); handleR.position.set(isZAxis ? 0 : -halfW + 0.08, -0.1, isZAxis ? -halfW + 0.08 : 0); handleR.castShadow = true; rightGroup.add(handleR);
 
-            const handleL = new THREE.Mesh(handleGeo, handleMat);
-            handleL.position.set(isZAxis ? 0 : halfW - 0.08, -0.1, isZAxis ? halfW - 0.08 : 0);
-            handleL.castShadow = true;
-            leftGroup.add(handleL);
+            scene.add(leftGroup); scene.add(rightGroup);
 
-            const handleR = new THREE.Mesh(handleGeo, handleMat);
-            handleR.position.set(isZAxis ? 0 : -halfW + 0.08, -0.1, isZAxis ? -halfW + 0.08 : 0);
-            handleR.castShadow = true;
-            rightGroup.add(handleR);
-
-            scene.add(leftGroup);
-            scene.add(rightGroup);
-
-            // 5. Door Swing Logic
             let swingL = -Math.PI / 2; let swingR = Math.PI / 2;
             if (!isZAxis && centerZ > 10) { swingL = Math.PI / 2; swingR = -Math.PI / 2; }
             else if (!isZAxis && centerZ < 5) { swingL = -Math.PI / 2; swingR = Math.PI / 2; }
             else if (isZAxis) { swingL = Math.PI / 2; swingR = -Math.PI / 2; }
 
-            // --- THE "PROPPED OPEN" LOGIC ---
-            // We lock the Left door permanently in its fully open rotation
             leftGroup.rotation.y = swingL;
-
-            // We only push the Right door into the array, so the proximity sensor only animates that one
             const centerVec = new THREE.Vector3(centerX, doorHeight / 2, centerZ);
-            doors.push({ group: rightGroup, center: centerVec, closedRot: 0, openRot: swingR });
+
+            // Re-adding interactability to the right door
+            const doorIndex = doors.length;
+            rightPanel.userData = { isDoor: true, doorIndex: doorIndex };
+            interactiveMeshes.push(rightPanel);
+
+            doors.push({ group: rightGroup, center: centerVec, closedRot: 0, openRot: swingR, isOpen: false });
         }
 
-        // Generate the double doors
-        createDoubleDoor(8.8, 11.2, 1.6, false); // Inventory
-        createDoubleDoor(5.6, 11.2, 1.6, false); // HOD Office
-        createDoubleDoor(8.8, 8.0, 1.6, false);  // Professor Room
-        createDoubleDoor(4.0, 5.6, 1.6, true);   // Staff Hall
+        createDoubleDoor(8.8, 11.2, 1.6, false);
+        createDoubleDoor(5.6, 11.2, 1.6, false);
+        createDoubleDoor(8.8, 8.0, 1.6, false);
+        createDoubleDoor(4.0, 5.6, 1.6, true);
 
-
-        // --- NAMEPLATE POSITIONING (TRULY FIXED) ---
-        // Wall thickness is 0.2 (so 0.1 from center). We add 0.01 for a safe gap to prevent Z-fighting.
-        const zInvHod = 11.2 - 0.11; // 11.09 (Faces -Z into the corridor)
-        const zProf = 8.0 + 0.11;    // 8.11 (Faces +Z into the corridor)
-        const xHall = 4.0 + 0.11;    // 4.11 (Faces +X into the corridor)
-
-        // Params: roomID, X, Y, Z, Rotation
+        // --- NAMEPLATES ---
+        const zInvHod = 11.2 - 0.11; const zProf = 8.0 + 0.11; const xHall = 4.0 + 0.11;
         createDoorNameplate('inventory', 10.0, 1.5, zInvHod, Math.PI);
         createDoorNameplate('hod', 7.0, 1.5, zInvHod, Math.PI);
         createDoorNameplate('prof', 10.0, 1.5, zProf, 0);
         createDoorNameplate('hall', xHall, 1.5, 6.8, Math.PI / 2);
-        // ------------------------------------
+
+        // --- PHYSICAL SWITCHBOARDS ---
+        function createSwitchboard(roomId, x, y, z, rotY) {
+            const boardGeo = new THREE.BoxGeometry(0.2, 0.3, 0.05);
+            const boardMat = new THREE.MeshStandardMaterial({ color: 0xe2e8f0, roughness: 0.8 });
+            const board = new THREE.Mesh(boardGeo, boardMat);
+            board.position.set(x, y, z);
+            board.rotation.y = rotY;
+            scene.add(board);
+
+            // Light Button (Top)
+            const lightSwGeo = new THREE.BoxGeometry(0.06, 0.08, 0.02);
+            const lightSwMat = new THREE.MeshStandardMaterial({ color: 0x4a5568 });
+            const lightSw = new THREE.Mesh(lightSwGeo, lightSwMat);
+            lightSw.position.set(0, 0.06, 0.025);
+            lightSw.userData = { isSwitch: true, type: 'light', room: roomId };
+            board.add(lightSw);
+            interactiveMeshes.push(lightSw);
+
+            // Fan Button (Bottom)
+            const fanSwGeo = new THREE.BoxGeometry(0.06, 0.08, 0.02);
+            const fanSwMat = new THREE.MeshStandardMaterial({ color: 0x4a5568 });
+            const fanSw = new THREE.Mesh(fanSwGeo, fanSwMat);
+            fanSw.position.set(0, -0.06, 0.025);
+            fanSw.userData = { isSwitch: true, type: 'fan', room: roomId };
+            board.add(fanSw);
+            interactiveMeshes.push(fanSw);
+        }
+
+        // Install switchboards immediately inside each room doorway
+        createSwitchboard('inventory', 9.8, 1.4, 11.25, 0);
+        createSwitchboard('hod', 4.4, 1.4, 11.25, 0);
+        createSwitchboard('prof', 9.8, 1.4, 7.95, Math.PI);
+        createSwitchboard('hall', 3.95, 1.4, 6.8, -Math.PI / 2);
 
         // --- DYNAMIC ROOF SYSTEM ---
         const roofGroup = new THREE.Group();
@@ -641,15 +624,12 @@
         function createCeiling(name, cx, cy, cz, w, h, d) {
             const geom = new THREE.BoxGeometry(w, h, d);
             const mesh = new THREE.Mesh(geom, matMainTech);
-            mesh.name = name;
-            mesh.position.set(cx, cy, cz);
-            mesh.castShadow = true;
-            mesh.receiveShadow = true;
+            mesh.name = name; mesh.position.set(cx, cy, cz);
+            mesh.castShadow = true; mesh.receiveShadow = true;
             roofGroup.add(mesh);
         }
 
-        const roofY = 2.45;
-        const roofT = 0.1;
+        const roofY = 2.45; const roofT = 0.1;
         createCeiling("Ceil_Professor", 10.8, roofY, 4.0, 7.2, roofT, 8.0);
         createCeiling("Ceil_Inventory", 10.8, roofY, 14.4, 7.2, roofT, 6.4);
         createCeiling("Ceil_H_Corridor", 10.8, roofY, 9.6, 7.2, roofT, 3.2);
@@ -657,58 +637,34 @@
         createCeiling("Ceil_V_Corridor", 5.6, roofY, 5.6, 3.2, roofT, 11.2);
         createCeiling("Ceil_Hall", 2.0, roofY, 5.6, 4.0, roofT, 11.2);
 
-        // --- EASTER EGG: MANJU THE GUIDE ---
+        // --- EASTER EGG ---
         const manjuTexture = textureLoader.load('./manju.png');
-        const manjuMaterial = new THREE.SpriteMaterial({
-            map: manjuTexture,
-            transparent: true,
-            depthTest: true
-        });
+        const manjuMaterial = new THREE.SpriteMaterial({ map: manjuTexture, transparent: true, depthTest: true });
         const manjuSprite = new THREE.Sprite(manjuMaterial);
         manjuSprite.scale.set(1.2, 1.68, 1.2);
         manjuSprite.position.set(10.0, 0.6, 3.8);
         scene.add(manjuSprite);
 
         // 6. ROOM ACTUATOR ARCHITECTURE
-        const roomCoordinates = {
-            inventory: { x: 10.8, z: 14.4 },
-            hod: { x: 3.6, z: 14.4 },
-            prof: { x: 10.8, z: 4.0 },
-            hall: { x: 2.0, z: 5.6 }
-        };
-
+        const roomCoordinates = { inventory: { x: 10.8, z: 14.4 }, hod: { x: 3.6, z: 14.4 }, prof: { x: 10.8, z: 4.0 }, hall: { x: 2.0, z: 5.6 } };
         const roomsData = {};
 
         for (const [roomId, coords] of Object.entries(roomCoordinates)) {
             const pLight = new THREE.PointLight(0xffffff, 0, 12);
             pLight.position.set(coords.x, 2.2, coords.z);
-            pLight.castShadow = true;
-            pLight.shadow.mapSize.width = 1024;
-            pLight.shadow.mapSize.height = 1024;
-            pLight.shadow.bias = -0.002;
+            pLight.castShadow = true; pLight.shadow.mapSize.width = 1024; pLight.shadow.mapSize.height = 1024; pLight.shadow.bias = -0.002;
             scene.add(pLight);
-
-            roomsData[roomId] = {
-                fanRunning: false, lightOn: false, fanMesh: null, lightMesh: null, pointLight: pLight
-            };
+            roomsData[roomId] = { fanRunning: false, lightOn: false, fanMesh: null, lightMesh: null, pointLight: pLight };
         }
 
-        // 7. GLTF MODELS
+        // 7. GLTF MODELS (Not interactive via raycaster)
         const gltfLoader = new GLTFLoader();
-
         gltfLoader.load('ceiling_fan.glb', (gltf) => {
             for (const [roomId, coords] of Object.entries(roomCoordinates)) {
                 const fanClone = gltf.scene.clone();
                 fanClone.position.set(coords.x, 2.3, coords.z);
                 fanClone.scale.set(0.3, 0.3, 0.3);
-                fanClone.userData.isFan = true;
-                fanClone.traverse((child) => {
-                    if (child.isMesh) {
-                        child.castShadow = true;
-                        child.receiveShadow = true;
-                        interactiveMeshes.push(child);
-                    }
-                });
+                fanClone.traverse((child) => { if (child.isMesh) { child.castShadow = true; child.receiveShadow = true; } });
                 scene.add(fanClone);
                 roomsData[roomId].fanMesh = fanClone;
             }
@@ -717,21 +673,12 @@
         gltfLoader.load('tubelight.glb', (gltf) => {
             for (const [roomId, coords] of Object.entries(roomCoordinates)) {
                 const tubeClone = gltf.scene.clone();
-                tubeClone.userData.isLight = true;
-                tubeClone.traverse((child) => {
-                    if (child.isMesh) {
-                        child.material = child.material.clone();
-                        child.castShadow = true;
-                        interactiveMeshes.push(child);
-                    }
-                });
+                tubeClone.traverse((child) => { if (child.isMesh) { child.material = child.material.clone(); child.castShadow = true; } });
                 tubeClone.scale.set(0.8, 0.8, 0.8);
                 if (roomId === 'prof' || roomId === 'hod' || roomId === 'inventory') {
-                    tubeClone.position.set(coords.x, 2.0, coords.z - (roomId === 'prof' ? 3.9 : 3.1));
-                    tubeClone.rotation.y = 0;
+                    tubeClone.position.set(coords.x, 2.0, coords.z - (roomId === 'prof' ? 3.9 : 3.1)); tubeClone.rotation.y = 0;
                 } else if (roomId === 'hall') {
-                    tubeClone.position.set(coords.x - 1.9, 2.0, coords.z);
-                    tubeClone.rotation.y = Math.PI / 2;
+                    tubeClone.position.set(coords.x - 1.9, 2.0, coords.z); tubeClone.rotation.y = Math.PI / 2;
                 }
                 scene.add(tubeClone);
                 roomsData[roomId].lightMesh = tubeClone;
@@ -741,11 +688,8 @@
         gltfLoader.load('desk_low-poly.glb', (gltf) => {
             for (const [roomId, coords] of Object.entries(roomCoordinates)) {
                 const deskClone = gltf.scene.clone();
-                deskClone.scale.set(0.0045, 0.0045, 0.0045);
-                deskClone.position.set(coords.x - 0.6, 0, coords.z + 0.8);
-                if (roomId === 'prof') deskClone.rotation.y = Math.PI / 2;
-                else if (roomId === 'hod') deskClone.rotation.y = Math.PI;
-                else deskClone.rotation.y = -Math.PI / 2;
+                deskClone.scale.set(0.0045, 0.0045, 0.0045); deskClone.position.set(coords.x - 0.6, 0, coords.z + 0.8);
+                if (roomId === 'prof') deskClone.rotation.y = Math.PI / 2; else if (roomId === 'hod') deskClone.rotation.y = Math.PI; else deskClone.rotation.y = -Math.PI / 2;
                 deskClone.traverse((child) => { if (child.isMesh) { child.castShadow = true; child.receiveShadow = true; } });
                 scene.add(deskClone);
             }
@@ -754,43 +698,27 @@
         gltfLoader.load('office_chair.glb', (gltf) => {
             for (const [roomId, coords] of Object.entries(roomCoordinates)) {
                 if (roomId === 'prof') continue;
-                const chairClone = gltf.scene.clone();
-                chairClone.scale.set(0.011, 0.011, 0.011);
-                const deskX = coords.x - 0.8; const deskZ = coords.z + 0.8;
-                if (roomId === 'hod') { chairClone.position.set(deskX - 0.7, 0, deskZ - 0.7); chairClone.rotation.y = Math.PI / 2; }
-                else if (roomId === 'inventory') { chairClone.position.set(deskX, 0, deskZ + 0.7); chairClone.rotation.y = Math.PI; }
-                else if (roomId === 'hall') { chairClone.position.set(deskX + 0.7, 0, deskZ + 0.7); chairClone.rotation.y = Math.PI; }
+                const chairClone = gltf.scene.clone(); chairClone.scale.set(0.011, 0.011, 0.011); const deskX = coords.x - 0.8; const deskZ = coords.z + 0.8;
+                if (roomId === 'hod') { chairClone.position.set(deskX - 0.7, 0, deskZ - 0.7); chairClone.rotation.y = Math.PI / 2; } else if (roomId === 'inventory') { chairClone.position.set(deskX, 0, deskZ + 0.7); chairClone.rotation.y = Math.PI; } else if (roomId === 'hall') { chairClone.position.set(deskX + 0.7, 0, deskZ + 0.7); chairClone.rotation.y = Math.PI; }
                 chairClone.traverse((child) => { if (child.isMesh) { child.castShadow = true; child.receiveShadow = true; } });
                 scene.add(chairClone);
             }
         });
 
         gltfLoader.load('book_shelf.glb', (gltf) => {
-            const shelfClone = gltf.scene;
-            shelfClone.scale.set(0.5, 0.5, 0.5);
-            shelfClone.position.set(2.0, 0, 10.0);
-            shelfClone.rotation.y = Math.PI;
-            shelfClone.traverse((child) => { if (child.isMesh) { child.castShadow = true; child.receiveShadow = true; } });
-            scene.add(shelfClone);
+            const shelfClone = gltf.scene; shelfClone.scale.set(0.5, 0.5, 0.5); shelfClone.position.set(2.0, 0, 10.0); shelfClone.rotation.y = Math.PI;
+            shelfClone.traverse((child) => { if (child.isMesh) { child.castShadow = true; child.receiveShadow = true; } }); scene.add(shelfClone);
         });
 
         gltfLoader.load('plastic_chair.glb', (gltf) => {
-            const plasticChair = gltf.scene;
-            plasticChair.scale.set(1.0, 1.0, 1.0);
-            plasticChair.position.set(3.4, 0, 4.0);
-            plasticChair.rotation.y = -Math.PI / 4;
-            plasticChair.traverse((child) => { if (child.isMesh) child.material = new THREE.MeshBasicMaterial({ color: "#4282c8" }); });
-            scene.add(plasticChair);
+            const plasticChair = gltf.scene; plasticChair.scale.set(1.0, 1.0, 1.0); plasticChair.position.set(3.4, 0, 4.0); plasticChair.rotation.y = -Math.PI / 4;
+            plasticChair.traverse((child) => { if (child.isMesh) child.material = new THREE.MeshBasicMaterial({ color: "#4282c8" }); }); scene.add(plasticChair);
         });
 
-        // 8. UI & CONTROLS LABELS
+        // 8. OVERHEAD TEXT LABELS
         function addRoomLabel(text, x, y, z) {
-            const labelDiv = document.createElement('div');
-            labelDiv.className = 'label';
-            labelDiv.textContent = text;
-            const labelObj = new CSS2DObject(labelDiv);
-            labelObj.position.set(x, y, z);
-            scene.add(labelObj);
+            const labelDiv = document.createElement('div'); labelDiv.className = 'label'; labelDiv.textContent = text;
+            const labelObj = new CSS2DObject(labelDiv); labelObj.position.set(x, y, z); scene.add(labelObj);
         }
 
         addRoomLabel("HOD OFFICE", 3.6, 2.8, 14.4);
@@ -800,100 +728,81 @@
         addRoomLabel("MAIN ENTRYWAY", 5.6, 2.8, 1.6);
         addRoomLabel("CENTRAL PASSAGE", 10.8, 2.8, 9.6);
 
-        let currentMode = 'FP';
-
+        // --- UI & CONTROLS SETUP ---
         const fpControls = new PointerLockControls(camera, renderer.domElement);
         const blocker = document.getElementById('blocker');
         const orbitControls = new OrbitControls(camera, renderer.domElement);
-        orbitControls.enabled = false;
-        orbitControls.enableDamping = true;
+        orbitControls.enabled = false; orbitControls.enableDamping = true;
 
         const toggleBtn = document.getElementById('camera-toggle');
         const modeStatus = document.getElementById('mode-status');
 
         blocker.addEventListener('click', () => { if (currentMode === 'FP') fpControls.lock(); });
+
+        let vrUIHidden = false;
         fpControls.addEventListener('lock', () => { blocker.style.display = 'none'; });
-        fpControls.addEventListener('unlock', () => { if (currentMode === 'FP') blocker.style.display = 'flex'; });
+        fpControls.addEventListener('unlock', () => {
+            setTimeout(() => { if (currentMode === 'FP' && !renderer.xr.isPresenting) blocker.style.display = 'flex'; }, 100);
+        });
 
         toggleBtn.addEventListener('click', () => {
             if (currentMode === 'FP') {
-                currentMode = 'ORBIT';
-                fpControls.unlock();
-                blocker.style.display = 'none';
-                orbitControls.enabled = true;
-                cameraRig.position.set(0, 0, 0);
-                camera.position.set(7.2, 25, 30);
-                orbitControls.target.set(7.2, 0, 8.8);
-                orbitControls.update();
-                modeStatus.innerText = "Camera: ORBITAL OVERVIEW";
-                toggleBtn.innerText = "SWITCH TO FIRST-PERSON";
-                scene.fog.far = 150;
-                roofGroup.visible = false;
+                currentMode = 'ORBIT'; fpControls.unlock(); blocker.style.display = 'none'; orbitControls.enabled = true;
+                cameraRig.position.set(0, 0, 0); camera.position.set(7.2, 25, 30); orbitControls.target.set(7.2, 0, 8.8); orbitControls.update();
+                modeStatus.innerText = "Camera: ORBITAL OVERVIEW"; toggleBtn.innerText = "SWITCH TO FIRST-PERSON"; scene.fog.far = 150; roofGroup.visible = false;
             } else {
-                currentMode = 'FP';
-                orbitControls.enabled = false;
-                blocker.style.display = 'flex';
-                cameraRig.position.set(7.2, 0, 9.6);
-                camera.position.set(0, 1.6, 0);
-                camera.lookAt(0, 1.6, -1);
-                modeStatus.innerText = "Camera: FIRST-PERSON Walkthrough";
-                toggleBtn.innerText = "SWITCH TO ORBIT VIEW";
-                scene.fog.far = 100;
-                roofGroup.visible = true;
+                currentMode = 'FP'; orbitControls.enabled = false; blocker.style.display = 'flex';
+                cameraRig.position.set(7.2, 0, 9.6); camera.position.set(0, 1.6, 0); camera.lookAt(0, 1.6, -1);
+                modeStatus.innerText = "Camera: FIRST-PERSON Walkthrough"; toggleBtn.innerText = "SWITCH TO ORBIT VIEW"; scene.fog.far = 100; roofGroup.visible = true;
             }
         });
 
-        let moveForward = false, moveBackward = false, moveLeft = false, moveRight = false;
-        const velocity = new THREE.Vector3();
-        const direction = new THREE.Vector3();
-
-        let activeZone = 'inventory';
-        const roomSelector = document.getElementById('room-selector');
+        // --- HARDWARE ACTUATION PIPELINE ---
         const fanStatusText = document.getElementById('fan-status-text');
         const lightStatusText = document.getElementById('light-status-text');
-        const fanToggleBtn = document.getElementById('fan-toggle-btn');
-        const lightToggleBtn = document.getElementById('light-toggle-btn');
-
         const FIREBASE_URL = "https://YOUR-FIREBASE-PROJECT.firebasedatabase.app/appliances.json";
+
+        function updateDirectoryUI() {
+            const dir = roomDirectory[activeZone];
+            if (!dir) return;
+            document.getElementById('dir-title').innerText = "ZONE: " + dir.title;
+            document.getElementById('current-zone-display').innerText = "LOCATION: " + dir.title;
+            const listDiv = document.getElementById('dir-list');
+            listDiv.innerHTML = '';
+            dir.personnel.forEach(person => {
+                const p = document.createElement('p'); p.className = 'ui-text'; p.style.fontWeight = 'bold'; p.style.color = '#1a202c'; p.innerText = "• " + person;
+                listDiv.appendChild(p);
+            });
+        }
 
         function updateActuatorUI() {
             const state = roomsData[activeZone];
             if (state.fanRunning) {
-                fanStatusText.innerText = "RUNNING"; fanStatusText.style.color = "#38a169"; fanToggleBtn.innerText = "STOP EXHAUST FAN";
+                fanStatusText.innerText = "RUNNING"; fanStatusText.style.color = "#38a169";
             } else {
-                fanStatusText.innerText = "OFF"; fanStatusText.style.color = "#718096"; fanToggleBtn.innerText = "TOGGLE EXHAUST FAN";
+                fanStatusText.innerText = "OFF"; fanStatusText.style.color = "#718096";
             }
             if (state.lightOn) {
-                lightStatusText.innerText = "ACTIVE [ILLUMINATED]"; lightStatusText.style.color = "#ecc94b"; lightToggleBtn.innerText = "DEACTIVATE ROOM LIGHT";
+                lightStatusText.innerText = "ACTIVE [ILLUMINATED]"; lightStatusText.style.color = "#ecc94b";
             } else {
-                lightStatusText.innerText = "OFF"; lightStatusText.style.color = "#718096"; lightToggleBtn.innerText = "TOGGLE ROOM LIGHT";
+                lightStatusText.innerText = "OFF"; lightStatusText.style.color = "#718096";
             }
         }
 
-        roomSelector.addEventListener('change', (event) => {
-            activeZone = event.target.value;
-            updateActuatorUI();
-        });
+        async function triggerFan(roomId) {
+            const state = roomsData[roomId];
+            state.fanRunning = !state.fanRunning;
+            if (roomId === activeZone) updateActuatorUI();
 
-        fanToggleBtn.addEventListener('click', async () => {
-            roomsData[activeZone].fanRunning = !roomsData[activeZone].fanRunning;
-            const isRunning = roomsData[activeZone].fanRunning;
-            updateActuatorUI();
-
-            if (activeZone === 'inventory') {
-                try {
-                    await fetch(FIREBASE_URL, {
-                        method: 'PATCH',
-                        body: JSON.stringify({ fan: isRunning })
-                    });
-                } catch (error) { console.warn("Cloud sync failed."); }
+            if (roomId === 'inventory') {
+                try { await fetch(FIREBASE_URL, { method: 'PATCH', body: JSON.stringify({ fan: state.fanRunning }) }); }
+                catch (error) { console.warn("Cloud sync failed."); }
             }
-        });
+        }
 
-        lightToggleBtn.addEventListener('click', async () => {
-            const state = roomsData[activeZone];
+        async function triggerLight(roomId) {
+            const state = roomsData[roomId];
             state.lightOn = !state.lightOn;
-            const isLightOn = state.lightOn;
 
             if (state.lightOn) {
                 state.pointLight.intensity = 6.0;
@@ -902,22 +811,63 @@
                 state.pointLight.intensity = 0;
                 if (state.lightMesh) state.lightMesh.traverse((child) => { if (child.isMesh) { child.material.emissive.setHex(0x000000); child.material.emissiveIntensity = 0; } });
             }
-            updateActuatorUI();
 
-            if (activeZone === 'inventory') {
-                try {
-                    await fetch(FIREBASE_URL, {
-                        method: 'PATCH',
-                        body: JSON.stringify({ light: isLightOn })
-                    });
-                } catch (error) { console.warn("Cloud sync failed."); }
+            if (roomId === activeZone) updateActuatorUI();
+
+            if (roomId === 'inventory') {
+                try { await fetch(FIREBASE_URL, { method: 'PATCH', body: JSON.stringify({ light: state.lightOn }) }); }
+                catch (error) { console.warn("Cloud sync failed."); }
             }
-        });
+        }
+
+        // --- KEYBOARD CONTROLS ---
+        let uiHidden = false;
+        let moveForward = false, moveBackward = false, moveLeft = false, moveRight = false;
+        const velocity = new THREE.Vector3(); const direction = new THREE.Vector3();
 
         document.addEventListener('keydown', (event) => {
             if (event.code === 'KeyC') document.getElementById('camera-toggle').click();
-            if (event.code === 'KeyF') document.getElementById('fan-toggle-btn').click();
-            if (event.code === 'KeyL') document.getElementById('light-toggle-btn').click();
+
+            if (event.code === 'KeyH') {
+                uiHidden = !uiHidden;
+                const displayState = uiHidden ? 'none' : 'block';
+                document.getElementById('ui-layer').style.display = displayState;
+                document.getElementById('directory-layer').style.display = displayState;
+                document.getElementById('hardware-layer').style.display = displayState;
+                document.getElementById('actuator-layer').style.display = displayState;
+                labelRenderer.domElement.style.display = displayState;
+                document.getElementById('blocker').style.display = 'none';
+            }
+
+            if (event.code === 'KeyE' && currentMode === 'FP' && fpControls.isLocked) {
+                const desktopRaycaster = new THREE.Raycaster();
+                desktopRaycaster.setFromCamera(new THREE.Vector2(0, 0), camera);
+                const intersects = desktopRaycaster.intersectObjects(interactiveMeshes, false);
+
+                if (intersects.length > 0) {
+                    let currentObj = intersects[0].object;
+
+                    let hitDoorIndex = -1;
+                    let isSwitch = false; let hitSwitchType = null; let hitSwitchRoom = null;
+
+                    while (currentObj) {
+                        if (currentObj.userData && currentObj.userData.isDoor) { hitDoorIndex = currentObj.userData.doorIndex; break; }
+                        if (currentObj.userData && currentObj.userData.isSwitch) {
+                            isSwitch = true; hitSwitchType = currentObj.userData.type; hitSwitchRoom = currentObj.userData.room; break;
+                        }
+                        currentObj = currentObj.parent;
+                    }
+
+                    if (hitDoorIndex !== -1) {
+                        const d = doors[hitDoorIndex];
+                        d.isOpen = !d.isOpen;
+                    } else if (isSwitch) {
+                        if (hitSwitchType === 'fan') triggerFan(hitSwitchRoom);
+                        else if (hitSwitchType === 'light') triggerLight(hitSwitchRoom);
+                    }
+                }
+            }
+
             if (currentMode !== 'FP') return;
             switch (event.code) {
                 case 'ArrowUp': case 'KeyW': moveForward = true; break;
@@ -937,231 +887,183 @@
             }
         });
 
-        let leftFaceBtnPressed = false;
-        let rightFaceBtnPressed = false;
-
-        // 9. ANIMATION LOOP
+        // --- ANIMATION LOOP ---
         let prevTime = performance.now();
 
         function animate() {
             const time = performance.now();
             const delta = (time - prevTime) / 1000;
-
             const prevDesktopPos = camera.position.clone();
             const prevRigPos = cameraRig.position.clone();
 
-            // --- DESKTOP FIRST PERSON MOVEMENT ---
+            if (renderer.xr.isPresenting && !vrUIHidden) {
+                document.getElementById('blocker').style.display = 'none';
+                document.getElementById('ui-layer').style.display = 'none';
+                document.getElementById('directory-layer').style.display = 'none';
+                document.getElementById('hardware-layer').style.display = 'none';
+                document.getElementById('actuator-layer').style.display = 'none';
+                labelRenderer.domElement.style.display = 'none';
+                vrUIHidden = true;
+            } else if (!renderer.xr.isPresenting && vrUIHidden && !uiHidden) {
+                document.getElementById('ui-layer').style.display = 'block';
+                document.getElementById('directory-layer').style.display = 'block';
+                document.getElementById('hardware-layer').style.display = 'block';
+                document.getElementById('actuator-layer').style.display = 'block';
+                labelRenderer.domElement.style.display = 'block';
+                vrUIHidden = false;
+            }
+
+            if (renderer.xr.isPresenting) blocker.style.display = 'none';
+
             if (currentMode === 'FP' && fpControls.isLocked === true && !renderer.xr.isPresenting) {
-                velocity.x -= velocity.x * 10.0 * delta;
-                velocity.z -= velocity.z * 10.0 * delta;
-                direction.z = Number(moveForward) - Number(moveBackward);
-                direction.x = Number(moveRight) - Number(moveLeft);
+                velocity.x -= velocity.x * 10.0 * delta; velocity.z -= velocity.z * 10.0 * delta;
+                direction.z = Number(moveForward) - Number(moveBackward); direction.x = Number(moveRight) - Number(moveLeft);
                 direction.normalize();
                 if (moveForward || moveBackward) velocity.z -= direction.z * 30.0 * delta;
                 if (moveLeft || moveRight) velocity.x -= direction.x * 30.0 * delta;
-                fpControls.moveRight(-velocity.x * delta);
-                fpControls.moveForward(-velocity.z * delta);
+                fpControls.moveRight(-velocity.x * delta); fpControls.moveForward(-velocity.z * delta);
             } else if (currentMode === 'ORBIT' && !renderer.xr.isPresenting) {
                 orbitControls.update();
             }
 
-            // --- VR LOCOMOTION & GAZE TOOLTIPS ---
+            // --- VR LOCOMOTION, RAYCASTING & INTERACTION ---
             if (renderer.xr.isPresenting) {
                 const session = renderer.xr.getSession();
-
-                let vrMoveZ = 0;
-                let vrMoveX = 0;
+                let vrMoveZ = 0; let vrMoveX = 0;
+                let triggerJustPressed = false;
 
                 if (session && session.inputSources) {
                     for (const source of session.inputSources) {
                         if (source.gamepad) {
-                            if (source.handedness === 'left') {
-                                if (Math.abs(source.gamepad.axes[3]) > 0.1) vrMoveZ = -source.gamepad.axes[3];
+                            if (!source.userData) source.userData = {};
+                            if (source.userData.triggerPressed === undefined) source.userData.triggerPressed = false;
 
-                                if (source.gamepad.buttons[4]?.pressed) {
-                                    if (!leftFaceBtnPressed) {
-                                        document.getElementById('fan-toggle-btn').click();
-                                        leftFaceBtnPressed = true;
-                                    }
-                                } else { leftFaceBtnPressed = false; }
-                            }
+                            if (source.handedness === 'left') { if (Math.abs(source.gamepad.axes[3]) > 0.1) vrMoveZ = -source.gamepad.axes[3]; }
+                            if (source.handedness === 'right') { if (Math.abs(source.gamepad.axes[2]) > 0.1) vrMoveX = source.gamepad.axes[2]; }
 
-                            if (source.handedness === 'right') {
-                                if (Math.abs(source.gamepad.axes[2]) > 0.1) vrMoveX = source.gamepad.axes[2];
-
-                                if (source.gamepad.buttons[4]?.pressed) {
-                                    if (!rightFaceBtnPressed) {
-                                        document.getElementById('light-toggle-btn').click();
-                                        rightFaceBtnPressed = true;
-                                    }
-                                } else { rightFaceBtnPressed = false; }
-                            }
+                            if (source.gamepad.buttons[0]?.pressed) {
+                                if (!source.userData.triggerPressed) { triggerJustPressed = true; source.userData.triggerPressed = true; }
+                            } else { source.userData.triggerPressed = false; }
                         }
                     }
                 }
 
                 const walkSpeed = 2.0;
                 const headDirection = new THREE.Vector3();
-                camera.getWorldDirection(headDirection);
-                headDirection.y = 0;
+                camera.getWorldDirection(headDirection); headDirection.y = 0;
+                if (headDirection.lengthSq() > 0.001) headDirection.normalize(); else headDirection.set(0, 0, -1);
 
-                // FIX 1: Prevent NaN division to stop the micro-stuttering
-                if (headDirection.lengthSq() > 0.001) {
-                    headDirection.normalize();
-                } else {
-                    headDirection.set(0, 0, -1); // Fallback forward vector
-                }
-
-                // FIX 2: Swap the cross-product order so Right is actually Right
                 const rightDirection = new THREE.Vector3();
                 rightDirection.crossVectors(headDirection, camera.up).normalize();
 
                 cameraRig.position.addScaledVector(headDirection, vrMoveZ * walkSpeed * delta);
                 cameraRig.position.addScaledVector(rightDirection, vrMoveX * walkSpeed * delta);
-                // --- GAZE TOOLTIP DETECTION ---
-                const headPosForRay = new THREE.Vector3();
-                camera.getWorldPosition(headPosForRay);
+
+                const headPosForRay = new THREE.Vector3(); camera.getWorldPosition(headPosForRay);
                 const headMatrix = new THREE.Matrix4().extractRotation(camera.matrixWorld);
                 const headDirForRay = new THREE.Vector3(0, 0, -1).applyMatrix4(headMatrix);
-
                 gazeRaycaster.set(headPosForRay, headDirForRay);
-                const intersects = gazeRaycaster.intersectObjects(interactiveMeshes, false);
 
-                tooltipFan.visible = false;
-                tooltipLight.visible = false;
+                const intersects = gazeRaycaster.intersectObjects(interactiveMeshes, false);
+                tooltipFan.visible = false; tooltipLight.visible = false; tooltipDoor.visible = false;
 
                 if (intersects.length > 0) {
-                    const hit = intersects[0];
-                    let currentObj = hit.object;
-                    let isFan = false;
-                    let isLight = false;
+                    const hit = intersects[0]; let currentObj = hit.object;
+                    let isSwitch = false; let hitSwitchType = null; let hitSwitchRoom = null;
+                    let isDoor = false; let hitDoorIndex = -1;
 
                     while (currentObj) {
-                        if (currentObj.userData && currentObj.userData.isFan) { isFan = true; break; }
-                        if (currentObj.userData && currentObj.userData.isLight) { isLight = true; break; }
+                        if (currentObj.userData && currentObj.userData.isDoor) { isDoor = true; hitDoorIndex = currentObj.userData.doorIndex; break; }
+                        if (currentObj.userData && currentObj.userData.isSwitch) {
+                            isSwitch = true; hitSwitchType = currentObj.userData.type; hitSwitchRoom = currentObj.userData.room; break;
+                        }
                         currentObj = currentObj.parent;
                     }
 
-                    if (isFan) {
-                        tooltipFan.position.copy(hit.point).lerp(headPosForRay, 0.15);
-                        tooltipFan.position.y += 0.2;
-                        tooltipFan.visible = true;
-                    } else if (isLight) {
-                        tooltipLight.position.copy(hit.point).lerp(headPosForRay, 0.15);
-                        tooltipLight.position.y -= 0.3;
-                        tooltipLight.visible = true;
+                    if (isSwitch) {
+                        if (hitSwitchType === 'fan') {
+                            tooltipFan.position.copy(hit.point).lerp(headPosForRay, 0.15);
+                            tooltipFan.position.y += 0.05; tooltipFan.visible = true;
+                        } else if (hitSwitchType === 'light') {
+                            tooltipLight.position.copy(hit.point).lerp(headPosForRay, 0.15);
+                            tooltipLight.position.y += 0.05; tooltipLight.visible = true;
+                        }
+                    } else if (isDoor) {
+                        tooltipDoor.position.copy(hit.point).lerp(headPosForRay, 0.15);
+                        tooltipDoor.visible = true;
+                    }
+
+                    if (triggerJustPressed) {
+                        if (isSwitch) {
+                            if (hitSwitchType === 'fan') triggerFan(hitSwitchRoom);
+                            else if (hitSwitchType === 'light') triggerLight(hitSwitchRoom);
+                        } else if (isDoor && hitDoorIndex !== -1) {
+                            const d = doors[hitDoorIndex]; d.isOpen = !d.isOpen;
+                        }
                     }
                 }
             }
 
-            // --- AUTO-DOOR PROXIMITY LOGIC ---
-            const playerPos = new THREE.Vector3();
-            camera.getWorldPosition(playerPos);
-
+            // Door Proximity & Animation
             for (let i = 0; i < doors.length; i++) {
                 const door = doors[i];
-                const distance = playerPos.distanceTo(door.center);
-                const targetRot = (distance < 3.0) ? door.openRot : door.closedRot;
+
+                // Allow manual toggle OR proximity logic
+                const distance = camera.getWorldPosition(new THREE.Vector3()).distanceTo(door.center);
+                if (distance < 2.0 && !door.isOpen) door.isOpen = true; // Auto open if very close
+                else if (distance > 3.0 && door.isOpen) door.isOpen = false; // Auto close if walked away
+
+                const targetRot = door.isOpen ? door.openRot : door.closedRot;
                 door.group.rotation.y += (targetRot - door.group.rotation.y) * 5.0 * delta;
             }
 
-            // --- COLLISION DETECTION ---
             if (currentMode === 'FP' || renderer.xr.isPresenting) {
-                const headPos = new THREE.Vector3();
-                camera.getWorldPosition(headPos);
-
+                const headPos = new THREE.Vector3(); camera.getWorldPosition(headPos);
                 const playerHeight = headPos.y || 1.6;
-                const playerBox = new THREE.Box3().setFromCenterAndSize(
-                    new THREE.Vector3(headPos.x, playerHeight / 2, headPos.z),
-                    new THREE.Vector3(0.4, playerHeight, 0.4)
-                );
-
+                const playerBox = new THREE.Box3().setFromCenterAndSize(new THREE.Vector3(headPos.x, playerHeight / 2, headPos.z), new THREE.Vector3(0.4, playerHeight, 0.4));
                 let collision = false;
-                for (let i = 0; i < wallBoundingBoxes.length; i++) {
-                    if (playerBox.intersectsBox(wallBoundingBoxes[i])) {
-                        collision = true;
-                        break;
-                    }
-                }
-
+                for (let i = 0; i < wallBoundingBoxes.length; i++) { if (playerBox.intersectsBox(wallBoundingBoxes[i])) { collision = true; break; } }
                 if (collision) {
-                    if (currentMode === 'FP' && !renderer.xr.isPresenting) {
-                        camera.position.copy(prevDesktopPos);
-                        velocity.x = 0;
-                        velocity.z = 0;
-                    } else if (renderer.xr.isPresenting) {
-                        cameraRig.position.copy(prevRigPos);
-                    }
+                    if (currentMode === 'FP' && !renderer.xr.isPresenting) { camera.position.copy(prevDesktopPos); velocity.x = 0; velocity.z = 0; }
+                    else if (renderer.xr.isPresenting) { cameraRig.position.copy(prevRigPos); }
                 }
             }
 
-            // --- CONTEXT-AWARE SPATIAL TRACKING ---
-            const headPosForZones = new THREE.Vector3();
-            camera.getWorldPosition(headPosForZones);
-
+            const headPosForZones = new THREE.Vector3(); camera.getWorldPosition(headPosForZones);
             let detectedZone = activeZone;
-
-            if (headPosForZones.x > 7.2 && headPosForZones.z < 8.0) {
-                detectedZone = 'prof';
-            } else if (headPosForZones.x > 7.2 && headPosForZones.z > 11.2) {
-                detectedZone = 'inventory';
-            } else if (headPosForZones.x < 7.2 && headPosForZones.z > 11.2) {
-                detectedZone = 'hod';
-            } else if (headPosForZones.x < 4.0 && headPosForZones.z < 11.2) {
-                detectedZone = 'hall';
-            }
+            if (headPosForZones.x > 7.2 && headPosForZones.z < 8.0) { detectedZone = 'prof'; }
+            else if (headPosForZones.x > 7.2 && headPosForZones.z > 11.2) { detectedZone = 'inventory'; }
+            else if (headPosForZones.x < 7.2 && headPosForZones.z > 11.2) { detectedZone = 'hod'; }
+            else if (headPosForZones.x < 4.0 && headPosForZones.z < 11.2) { detectedZone = 'hall'; }
 
             if (detectedZone !== activeZone) {
                 activeZone = detectedZone;
-                document.getElementById('room-selector').value = activeZone;
-                updateActuatorUI();
-                console.log("Spatial Tracking: User entered " + activeZone.toUpperCase());
+                updateActuatorUI(); updateDirectoryUI();
             }
 
-            // Actuator Rotations
-            for (const state of Object.values(roomsData)) {
-                if (state.fanRunning && state.fanMesh) state.fanMesh.rotation.y += 0.4;
-            }
-
-            prevTime = time;
-            renderer.render(scene, camera);
-
-            if (!renderer.xr.isPresenting) {
-                labelRenderer.render(scene, camera);
-            }
+            for (const state of Object.values(roomsData)) { if (state.fanRunning && state.fanMesh) state.fanMesh.rotation.y += 0.4; }
+            prevTime = time; renderer.render(scene, camera);
+            if (!renderer.xr.isPresenting) { labelRenderer.render(scene, camera); }
         }
 
         renderer.setAnimationLoop(animate);
 
         window.addEventListener('resize', () => {
-            camera.aspect = window.innerWidth / window.innerHeight;
-            camera.updateProjectionMatrix();
-            renderer.setSize(window.innerWidth, window.innerHeight);
-            labelRenderer.setSize(window.innerWidth, window.innerHeight);
+            if (!renderer.xr.isPresenting) {
+                camera.aspect = window.innerWidth / window.innerHeight;
+                camera.updateProjectionMatrix();
+                renderer.setSize(window.innerWidth, window.innerHeight);
+                labelRenderer.setSize(window.innerWidth, window.innerHeight);
+            }
         });
 
-        // 10. HARDWARE DATA FETCH
+        // 10. HARDWARE DATA FETCH (Placeholder/Demo logic)
         const gasReadout = document.getElementById('gas-readout');
+        const ESP32_IP = "http://192.168.1.50"; // Adjust if reverting to local hardware
 
-        setInterval(async () => {
-            try {
-                const response = await fetch(`${ESP32_IP}/data`);
-                const data = await response.json();
-                if (data.gasLevel > 500) {
-                    gasReadout.innerText = data.gasLevel + " [HAZARD]";
-                    gasReadout.style.color = "#e53e3e";
-                    scene.background.setHex(0x8c9c92); scene.fog.color.setHex(0x8c9c92);
-                    scene.fog.near = 2; scene.fog.far = currentMode === 'FP' ? 20 : 80;
-                } else {
-                    gasReadout.innerText = data.gasLevel + " [CLEAN]";
-                    gasReadout.style.color = "#2b6cb0";
-                    scene.background.setHex(0x87CEEB); scene.fog.color.setHex(0x87CEEB);
-                    scene.fog.near = 5; scene.fog.far = currentMode === 'FP' ? 120 : 150;
-                }
-            } catch (error) { }
-        }, 2000);
+        // Remove or adjust this interval based on whether you actually attached a gas sensor
+        // setInterval(async () => { ... }, 2000); 
 
-        // Hardware Failure Demo
         document.addEventListener('keydown', (event) => {
             if (event.key === '9') {
                 gasReadout.innerText = "850 [HAZARD - SIMULATED]"; gasReadout.style.color = "#e53e3e";
