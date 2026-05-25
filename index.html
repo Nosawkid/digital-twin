@@ -610,12 +610,14 @@
             board.add(fanSw);
             interactiveMeshes.push(fanSw);
         }
+        const zInvHodInner = 11.2 + 0.135; // Inside Inventory/HOD (+Z direction)
+        const zProfInner = 8.0 - 0.135;    // Inside Prof Room (-Z direction)
+        const xHallInner = 4.0 - 0.135;    // Inside Staff Hall (-X direction)
 
-        // Install switchboards immediately inside each room doorway
-        createSwitchboard('inventory', 9.8, 1.4, 11.25, 0);
-        createSwitchboard('hod', 4.4, 1.4, 11.25, 0);
-        createSwitchboard('prof', 9.8, 1.4, 7.95, Math.PI);
-        createSwitchboard('hall', 3.95, 1.4, 6.8, -Math.PI / 2);
+        createSwitchboard('inventory', 9.8, 1.4, zInvHodInner, 0);
+        createSwitchboard('hod', 4.4, 1.4, zInvHodInner, 0);
+        createSwitchboard('prof', 9.8, 1.4, zProfInner, Math.PI);
+        createSwitchboard('hall', xHallInner, 1.4, 6.8, -Math.PI / 2);
 
         // --- DYNAMIC ROOF SYSTEM ---
         const roofGroup = new THREE.Group();
@@ -688,7 +690,9 @@
         gltfLoader.load('desk_low-poly.glb', (gltf) => {
             for (const [roomId, coords] of Object.entries(roomCoordinates)) {
                 const deskClone = gltf.scene.clone();
-                deskClone.scale.set(0.0045, 0.0045, 0.0045); deskClone.position.set(coords.x - 0.6, 0, coords.z + 0.8);
+                // REDUCED SCALE: Dropped from 0.0045 to 0.003
+                deskClone.scale.set(0.003, 0.003, 0.003);
+                deskClone.position.set(coords.x - 0.6, 0, coords.z + 0.8);
                 if (roomId === 'prof') deskClone.rotation.y = Math.PI / 2; else if (roomId === 'hod') deskClone.rotation.y = Math.PI; else deskClone.rotation.y = -Math.PI / 2;
                 deskClone.traverse((child) => { if (child.isMesh) { child.castShadow = true; child.receiveShadow = true; } });
                 scene.add(deskClone);
@@ -698,23 +702,29 @@
         gltfLoader.load('office_chair.glb', (gltf) => {
             for (const [roomId, coords] of Object.entries(roomCoordinates)) {
                 if (roomId === 'prof') continue;
-                const chairClone = gltf.scene.clone(); chairClone.scale.set(0.011, 0.011, 0.011); const deskX = coords.x - 0.8; const deskZ = coords.z + 0.8;
+                const chairClone = gltf.scene.clone();
+                // REDUCED SCALE: Dropped from 0.011 to 0.0075
+                chairClone.scale.set(0.0075, 0.0075, 0.0075);
+                const deskX = coords.x - 0.8; const deskZ = coords.z + 0.8;
                 if (roomId === 'hod') { chairClone.position.set(deskX - 0.7, 0, deskZ - 0.7); chairClone.rotation.y = Math.PI / 2; } else if (roomId === 'inventory') { chairClone.position.set(deskX, 0, deskZ + 0.7); chairClone.rotation.y = Math.PI; } else if (roomId === 'hall') { chairClone.position.set(deskX + 0.7, 0, deskZ + 0.7); chairClone.rotation.y = Math.PI; }
                 chairClone.traverse((child) => { if (child.isMesh) { child.castShadow = true; child.receiveShadow = true; } });
                 scene.add(chairClone);
             }
         });
 
+        // (Leave the book_shelf loader exactly as it is here)
         gltfLoader.load('book_shelf.glb', (gltf) => {
             const shelfClone = gltf.scene; shelfClone.scale.set(0.5, 0.5, 0.5); shelfClone.position.set(2.0, 0, 10.0); shelfClone.rotation.y = Math.PI;
             shelfClone.traverse((child) => { if (child.isMesh) { child.castShadow = true; child.receiveShadow = true; } }); scene.add(shelfClone);
         });
 
         gltfLoader.load('plastic_chair.glb', (gltf) => {
-            const plasticChair = gltf.scene; plasticChair.scale.set(1.0, 1.0, 1.0); plasticChair.position.set(3.4, 0, 4.0); plasticChair.rotation.y = -Math.PI / 4;
+            const plasticChair = gltf.scene;
+            // REDUCED SCALE: Dropped from 1.0 to 0.7
+            plasticChair.scale.set(0.7, 0.7, 0.7);
+            plasticChair.position.set(3.4, 0, 4.0); plasticChair.rotation.y = -Math.PI / 4;
             plasticChair.traverse((child) => { if (child.isMesh) child.material = new THREE.MeshBasicMaterial({ color: "#4282c8" }); }); scene.add(plasticChair);
         });
-
         // 8. OVERHEAD TEXT LABELS
         function addRoomLabel(text, x, y, z) {
             const labelDiv = document.createElement('div'); labelDiv.className = 'label'; labelDiv.textContent = text;
