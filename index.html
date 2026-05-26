@@ -216,8 +216,7 @@
         <h2>ROOM DIRECTORY</h2>
         <p id="dir-title" class="ui-text" style="color: #805ad5; font-weight: bold; margin-bottom: 12px;">ZONE:
             INVENTORY</p>
-        <div id="dir-list">
-        </div>
+        <div id="dir-list"></div>
     </div>
 
     <div id="hardware-layer" class="hub-overlay">
@@ -227,13 +226,10 @@
 
     <div id="actuator-layer" class="hub-overlay">
         <h2>ACTUATOR CONTROL</h2>
-
         <p id="current-zone-display">LOCATION: INVENTORY</p>
-
         <p class="ui-text">Zone Fan: <span id="fan-status-text" style="color: #718096; font-weight:bold;">OFF</span></p>
         <p class="ui-text">Zone Light: <span id="light-status-text" style="color: #718096; font-weight:bold;">OFF</span>
         </p>
-
         <button id="fan-toggle-btn" class="tech-btn actuator-btn">TOGGLE EXHAUST FAN</button>
         <button id="light-toggle-btn" class="tech-btn actuator-btn">TOGGLE ROOM LIGHT</button>
     </div>
@@ -369,36 +365,6 @@
         labelRenderer.domElement.style.pointerEvents = 'none';
         document.body.appendChild(labelRenderer.domElement);
 
-        // --- VR GAZE TOOLTIPS ---
-        function createVRTooltip(textStr) {
-            const canvas = document.createElement('canvas');
-            canvas.width = 512; canvas.height = 128;
-            const ctx = canvas.getContext('2d');
-            ctx.fillStyle = 'rgba(0, 0, 0, 0.8)';
-            ctx.beginPath();
-            ctx.roundRect(0, 0, 512, 128, 20);
-            ctx.fill();
-            ctx.fillStyle = '#ffffff';
-            ctx.font = 'bold 36px monospace';
-            ctx.textAlign = 'center';
-            ctx.textBaseline = 'middle';
-            ctx.fillText(textStr, 256, 64);
-
-            const tex = new THREE.CanvasTexture(canvas);
-            const mat = new THREE.SpriteMaterial({ map: tex, transparent: true, depthTest: false });
-            const sprite = new THREE.Sprite(mat);
-            sprite.scale.set(1.2, 0.3, 1);
-            sprite.renderOrder = 999;
-            sprite.visible = false;
-            scene.add(sprite);
-            return sprite;
-        }
-
-        const tooltipFan = createVRTooltip("[ Trigger: Toggle Fan ]");
-        const tooltipLight = createVRTooltip("[ Trigger: Toggle Light ]");
-        const tooltipDoor = createVRTooltip("[ Trigger: Use Door ]");
-        const gazeRaycaster = new THREE.Raycaster();
-
         // --- META QUEST CONTROLLERS ---
         const controller1 = renderer.xr.getController(0);
         const controller2 = renderer.xr.getController(1);
@@ -421,16 +387,18 @@
         scene.add(mainLight);
 
         const textureLoader = new THREE.TextureLoader();
-        const floorColor = textureLoader.load('conc_floor_color.jpg');
-        const floorNormal = textureLoader.load('conc_floor_normal.jpg');
-        const floorRoughness = textureLoader.load('conc_floor_roughness.jpg');
-        [floorColor, floorNormal, floorRoughness].forEach(tex => { tex.wrapS = THREE.RepeatWrapping; tex.wrapT = THREE.RepeatWrapping; tex.repeat.set(1, 1); });
+
+        // PBR Materials using your standard names
+        const floorColor = textureLoader.load('floor_color.jpg');
+        const floorNormal = textureLoader.load('floor_normal.jpg');
+        const floorRoughness = textureLoader.load('floor_roughness.jpg');
+        [floorColor, floorNormal, floorRoughness].forEach(tex => { tex.wrapS = THREE.RepeatWrapping; tex.wrapT = THREE.RepeatWrapping; tex.repeat.set(10, 10); });
         const matFloorTech = new THREE.MeshStandardMaterial({ map: floorColor, normalMap: floorNormal, roughnessMap: floorRoughness, metalness: 0.05 });
 
         const wallColor = textureLoader.load('wall_color.jpg');
         const wallNormal = textureLoader.load('wall_normal.jpg');
         const wallRoughness = textureLoader.load('wall_roughness.jpg');
-        [wallColor, wallNormal, wallRoughness].forEach(tex => { tex.wrapS = THREE.RepeatWrapping; tex.wrapT = THREE.RepeatWrapping; tex.repeat.set(2, 2); });
+        [wallColor, wallNormal, wallRoughness].forEach(tex => { tex.wrapS = THREE.RepeatWrapping; tex.wrapT = THREE.RepeatWrapping; tex.repeat.set(6, 6); });
         const matMainTech = new THREE.MeshStandardMaterial({ map: wallColor, normalMap: wallNormal, roughnessMap: wallRoughness, metalness: 0.0 });
 
         const matWireframe = new THREE.MeshBasicMaterial({ color: 0x2b6cb0, wireframe: true, transparent: true, opacity: 0.1 });
@@ -563,7 +531,7 @@
             leftGroup.rotation.y = swingL;
             const centerVec = new THREE.Vector3(centerX, doorHeight / 2, centerZ);
 
-            // Re-adding interactability to the right door
+            // Re-adding interactability to the right door (for desktop 'E' testing)
             const doorIndex = doors.length;
             rightPanel.userData = { isDoor: true, doorIndex: doorIndex };
             interactiveMeshes.push(rightPanel);
@@ -583,7 +551,7 @@
         createDoorNameplate('prof', 10.0, 1.5, zProf, 0);
         createDoorNameplate('hall', xHall, 1.5, 6.8, Math.PI / 2);
 
-        // --- PHYSICAL SWITCHBOARDS ---
+        // --- NEW UX: CONTEXTUAL HOLO-SWITCHBOARDS ---
         function createSwitchboard(roomId, x, y, z, rotY) {
             const boardGeo = new THREE.BoxGeometry(0.2, 0.3, 0.05);
             const boardMat = new THREE.MeshStandardMaterial({ color: 0xe2e8f0, roughness: 0.8 });
@@ -592,28 +560,42 @@
             board.rotation.y = rotY;
             scene.add(board);
 
-            // Light Button (Top)
-            const lightSwGeo = new THREE.BoxGeometry(0.06, 0.08, 0.02);
-            const lightSwMat = new THREE.MeshStandardMaterial({ color: 0x4a5568 });
-            const lightSw = new THREE.Mesh(lightSwGeo, lightSwMat);
+            // Add color-coded physical buttons (No raycaster aiming required in VR anymore)
+            // They are still added to interactiveMeshes so desktop users can press 'E'
+            const lightSw = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.08, 0.02), new THREE.MeshStandardMaterial({ color: 0xecc94b }));
             lightSw.position.set(0, 0.06, 0.025);
             lightSw.userData = { isSwitch: true, type: 'light', room: roomId };
             board.add(lightSw);
             interactiveMeshes.push(lightSw);
 
-            // Fan Button (Bottom)
-            const fanSwGeo = new THREE.BoxGeometry(0.06, 0.08, 0.02);
-            const fanSwMat = new THREE.MeshStandardMaterial({ color: 0x4a5568 });
-            const fanSw = new THREE.Mesh(fanSwGeo, fanSwMat);
+            const fanSw = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.08, 0.02), new THREE.MeshStandardMaterial({ color: 0x38a169 }));
             fanSw.position.set(0, -0.06, 0.025);
             fanSw.userData = { isSwitch: true, type: 'fan', room: roomId };
             board.add(fanSw);
             interactiveMeshes.push(fanSw);
+
+            // Permanent Holographic Quick-Action Menu
+            const canvas = document.createElement('canvas');
+            canvas.width = 512; canvas.height = 128;
+            const ctx = canvas.getContext('2d');
+            ctx.fillStyle = 'rgba(26, 32, 44, 0.85)'; // Dark slate background
+            ctx.beginPath(); ctx.roundRect(0, 0, 512, 128, 16); ctx.fill();
+
+            ctx.fillStyle = '#ecc94b'; ctx.font = 'bold 40px monospace';
+            ctx.fillText("[ A ] = LIGHT", 30, 80);
+            ctx.fillStyle = '#38a169';
+            ctx.fillText("[ X ] = FAN", 270, 80);
+
+            const tex = new THREE.CanvasTexture(canvas);
+            const holoSign = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, transparent: true, depthTest: false }));
+            holoSign.scale.set(0.9, 0.22, 1.0);
+            holoSign.position.set(0, 0.35, 0); // Floating slightly above the switchboard
+            board.add(holoSign);
         }
 
-        const zInvHodInner = 11.2 + 0.135; // Inside Inventory/HOD (+Z direction)
-        const zProfInner = 8.0 - 0.135;    // Inside Prof Room (-Z direction)
-        const xHallInner = 4.0 - 0.135;    // Inside Staff Hall (-X direction)
+        const zInvHodInner = 11.2 + 0.135;
+        const zProfInner = 8.0 - 0.135;
+        const xHallInner = 4.0 - 0.135;
 
         createSwitchboard('inventory', 9.8, 1.4, zInvHodInner, 0);
         createSwitchboard('hod', 4.4, 1.4, zInvHodInner, 0);
@@ -660,7 +642,7 @@
             roomsData[roomId] = { fanRunning: false, lightOn: false, fanMesh: null, lightMesh: null, pointLight: pLight };
         }
 
-        // 7. GLTF MODELS (Not interactive via raycaster)
+        // 7. GLTF MODELS (Correctly scaled)
         const gltfLoader = new GLTFLoader();
         gltfLoader.load('ceiling_fan.glb', (gltf) => {
             for (const [roomId, coords] of Object.entries(roomCoordinates)) {
@@ -691,8 +673,7 @@
         gltfLoader.load('desk_low-poly.glb', (gltf) => {
             for (const [roomId, coords] of Object.entries(roomCoordinates)) {
                 const deskClone = gltf.scene.clone();
-                // REDUCED SCALE: Dropped from 0.0045 to 0.003
-                deskClone.scale.set(0.003, 0.003, 0.003);
+                deskClone.scale.set(0.003, 0.003, 0.003); // Scaled
                 deskClone.position.set(coords.x - 0.6, 0, coords.z + 0.8);
                 if (roomId === 'prof') deskClone.rotation.y = Math.PI / 2; else if (roomId === 'hod') deskClone.rotation.y = Math.PI; else deskClone.rotation.y = -Math.PI / 2;
                 deskClone.traverse((child) => { if (child.isMesh) { child.castShadow = true; child.receiveShadow = true; } });
@@ -704,8 +685,7 @@
             for (const [roomId, coords] of Object.entries(roomCoordinates)) {
                 if (roomId === 'prof') continue;
                 const chairClone = gltf.scene.clone();
-                // REDUCED SCALE: Dropped from 0.011 to 0.0075
-                chairClone.scale.set(0.0075, 0.0075, 0.0075);
+                chairClone.scale.set(0.0075, 0.0075, 0.0075); // Scaled
                 const deskX = coords.x - 0.8; const deskZ = coords.z + 0.8;
                 if (roomId === 'hod') { chairClone.position.set(deskX - 0.7, 0, deskZ - 0.7); chairClone.rotation.y = Math.PI / 2; } else if (roomId === 'inventory') { chairClone.position.set(deskX, 0, deskZ + 0.7); chairClone.rotation.y = Math.PI; } else if (roomId === 'hall') { chairClone.position.set(deskX + 0.7, 0, deskZ + 0.7); chairClone.rotation.y = Math.PI; }
                 chairClone.traverse((child) => { if (child.isMesh) { child.castShadow = true; child.receiveShadow = true; } });
@@ -720,8 +700,7 @@
 
         gltfLoader.load('plastic_chair.glb', (gltf) => {
             const plasticChair = gltf.scene;
-            // REDUCED SCALE: Dropped from 1.0 to 0.7
-            plasticChair.scale.set(0.7, 0.7, 0.7);
+            plasticChair.scale.set(0.7, 0.7, 0.7); // Scaled
             plasticChair.position.set(3.4, 0, 4.0); plasticChair.rotation.y = -Math.PI / 4;
             plasticChair.traverse((child) => { if (child.isMesh) child.material = new THREE.MeshBasicMaterial({ color: "#4282c8" }); }); scene.add(plasticChair);
         });
@@ -777,7 +756,7 @@
         // --- ADD YOUR FIREBASE URL HERE ---
         const FIREBASE_URL = "https://YOUR-FIREBASE-PROJECT.firebasedatabase.app/appliances.json";
 
-        // RE-ATTACH THE LISTENERS SO HOTKEYS AND MOUSE CLICKS WORK
+        // DESKTOP UI EVENT LISTENERS
         fanToggleBtn.addEventListener('click', () => triggerFan(activeZone));
         lightToggleBtn.addEventListener('click', () => triggerLight(activeZone));
 
@@ -850,8 +829,10 @@
 
         document.addEventListener('keydown', (event) => {
             if (event.code === 'KeyC') document.getElementById('camera-toggle').click();
-            if (event.code === 'KeyF') document.getElementById('fan-toggle-btn').click();
-            if (event.code === 'KeyL') document.getElementById('light-toggle-btn').click();
+
+            // Developer Failsafe Hotkeys mapped to active zone
+            if (event.code === 'KeyF') triggerFan(activeZone);
+            if (event.code === 'KeyL') triggerLight(activeZone);
 
             if (event.code === 'KeyH') {
                 uiHidden = !uiHidden;
@@ -864,6 +845,7 @@
                 document.getElementById('blocker').style.display = 'none';
             }
 
+            // Desktop "E" to Interact (Still supports physical switch clicks)
             if (event.code === 'KeyE' && currentMode === 'FP' && fpControls.isLocked) {
                 const desktopRaycaster = new THREE.Raycaster();
                 desktopRaycaster.setFromCamera(new THREE.Vector2(0, 0), camera);
@@ -914,6 +896,8 @@
 
         // --- ANIMATION LOOP ---
         let prevTime = performance.now();
+        let leftFaceBtnPressed = false;
+        let rightFaceBtnPressed = false;
 
         function animate() {
             const time = performance.now();
@@ -951,24 +935,33 @@
                 orbitControls.update();
             }
 
-            // --- VR LOCOMOTION, RAYCASTING & INTERACTION ---
+            // --- VR LOCOMOTION & INTERACTION ---
             if (renderer.xr.isPresenting) {
                 const session = renderer.xr.getSession();
                 let vrMoveZ = 0; let vrMoveX = 0;
-                let triggerJustPressed = false;
 
                 if (session && session.inputSources) {
                     for (const source of session.inputSources) {
                         if (source.gamepad) {
                             if (!source.userData) source.userData = {};
-                            if (source.userData.triggerPressed === undefined) source.userData.triggerPressed = false;
 
-                            if (source.handedness === 'left') { if (Math.abs(source.gamepad.axes[3]) > 0.1) vrMoveZ = -source.gamepad.axes[3]; }
-                            if (source.handedness === 'right') { if (Math.abs(source.gamepad.axes[2]) > 0.1) vrMoveX = source.gamepad.axes[2]; }
+                            if (source.handedness === 'left') {
+                                if (Math.abs(source.gamepad.axes[3]) > 0.1) vrMoveZ = -source.gamepad.axes[3];
 
-                            if (source.gamepad.buttons[0]?.pressed) {
-                                if (!source.userData.triggerPressed) { triggerJustPressed = true; source.userData.triggerPressed = true; }
-                            } else { source.userData.triggerPressed = false; }
+                                // QUICK ACTION: 'X' BUTTON FOR FAN
+                                if (source.gamepad.buttons[4]?.pressed) {
+                                    if (!leftFaceBtnPressed) { triggerFan(activeZone); leftFaceBtnPressed = true; }
+                                } else { leftFaceBtnPressed = false; }
+                            }
+
+                            if (source.handedness === 'right') {
+                                if (Math.abs(source.gamepad.axes[2]) > 0.1) vrMoveX = source.gamepad.axes[2];
+
+                                // QUICK ACTION: 'A' BUTTON FOR LIGHT
+                                if (source.gamepad.buttons[4]?.pressed) {
+                                    if (!rightFaceBtnPressed) { triggerLight(activeZone); rightFaceBtnPressed = true; }
+                                } else { rightFaceBtnPressed = false; }
+                            }
                         }
                     }
                 }
@@ -983,50 +976,6 @@
 
                 cameraRig.position.addScaledVector(headDirection, vrMoveZ * walkSpeed * delta);
                 cameraRig.position.addScaledVector(rightDirection, vrMoveX * walkSpeed * delta);
-
-                const headPosForRay = new THREE.Vector3(); camera.getWorldPosition(headPosForRay);
-                const headMatrix = new THREE.Matrix4().extractRotation(camera.matrixWorld);
-                const headDirForRay = new THREE.Vector3(0, 0, -1).applyMatrix4(headMatrix);
-                gazeRaycaster.set(headPosForRay, headDirForRay);
-
-                const intersects = gazeRaycaster.intersectObjects(interactiveMeshes, false);
-                tooltipFan.visible = false; tooltipLight.visible = false; tooltipDoor.visible = false;
-
-                if (intersects.length > 0) {
-                    const hit = intersects[0]; let currentObj = hit.object;
-                    let isSwitch = false; let hitSwitchType = null; let hitSwitchRoom = null;
-                    let isDoor = false; let hitDoorIndex = -1;
-
-                    while (currentObj) {
-                        if (currentObj.userData && currentObj.userData.isDoor) { isDoor = true; hitDoorIndex = currentObj.userData.doorIndex; break; }
-                        if (currentObj.userData && currentObj.userData.isSwitch) {
-                            isSwitch = true; hitSwitchType = currentObj.userData.type; hitSwitchRoom = currentObj.userData.room; break;
-                        }
-                        currentObj = currentObj.parent;
-                    }
-
-                    if (isSwitch) {
-                        if (hitSwitchType === 'fan') {
-                            tooltipFan.position.copy(hit.point).lerp(headPosForRay, 0.15);
-                            tooltipFan.position.y += 0.05; tooltipFan.visible = true;
-                        } else if (hitSwitchType === 'light') {
-                            tooltipLight.position.copy(hit.point).lerp(headPosForRay, 0.15);
-                            tooltipLight.position.y += 0.05; tooltipLight.visible = true;
-                        }
-                    } else if (isDoor) {
-                        tooltipDoor.position.copy(hit.point).lerp(headPosForRay, 0.15);
-                        tooltipDoor.visible = true;
-                    }
-
-                    if (triggerJustPressed) {
-                        if (isSwitch) {
-                            if (hitSwitchType === 'fan') triggerFan(hitSwitchRoom);
-                            else if (hitSwitchType === 'light') triggerLight(hitSwitchRoom);
-                        } else if (isDoor && hitDoorIndex !== -1) {
-                            const d = doors[hitDoorIndex]; d.isOpen = !d.isOpen;
-                        }
-                    }
-                }
             }
 
             // Door Proximity & Animation
@@ -1082,12 +1031,8 @@
             }
         });
 
-        // 10. HARDWARE DATA FETCH (Placeholder/Demo logic)
+        // 10. HARDWARE DATA FETCH (Simulated Fallback Demo)
         const gasReadout = document.getElementById('gas-readout');
-        const ESP32_IP = "http://192.168.1.50"; // Adjust if reverting to local hardware
-
-        // Remove or adjust this interval based on whether you actually attached a gas sensor
-        // setInterval(async () => { ... }, 2000); 
 
         document.addEventListener('keydown', (event) => {
             if (event.key === '9') {
