@@ -234,8 +234,8 @@
         <p class="ui-text">Zone Light: <span id="light-status-text" style="color: #718096; font-weight:bold;">OFF</span>
         </p>
 
-        <button id="fan-toggle-btn" class="tech-btn actuator-btn" style="display:none;">TOGGLE EXHAUST FAN</button>
-        <button id="light-toggle-btn" class="tech-btn actuator-btn" style="display:none;">TOGGLE ROOM LIGHT</button>
+        <button id="fan-toggle-btn" class="tech-btn actuator-btn">TOGGLE EXHAUST FAN</button>
+        <button id="light-toggle-btn" class="tech-btn actuator-btn">TOGGLE ROOM LIGHT</button>
     </div>
 
     <script type="importmap">
@@ -421,16 +421,16 @@
         scene.add(mainLight);
 
         const textureLoader = new THREE.TextureLoader();
-        const floorColor = textureLoader.load('floor_color.jpg');
-        const floorNormal = textureLoader.load('floor_normal.jpg');
-        const floorRoughness = textureLoader.load('floor_roughness.jpg');
-        [floorColor, floorNormal, floorRoughness].forEach(tex => { tex.wrapS = THREE.RepeatWrapping; tex.wrapT = THREE.RepeatWrapping; tex.repeat.set(10, 10); });
+        const floorColor = textureLoader.load('conc_floor_color.jpg');
+        const floorNormal = textureLoader.load('conc_floor_normal.jpg');
+        const floorRoughness = textureLoader.load('conc_floor_roughness.jpg');
+        [floorColor, floorNormal, floorRoughness].forEach(tex => { tex.wrapS = THREE.RepeatWrapping; tex.wrapT = THREE.RepeatWrapping; tex.repeat.set(1, 1); });
         const matFloorTech = new THREE.MeshStandardMaterial({ map: floorColor, normalMap: floorNormal, roughnessMap: floorRoughness, metalness: 0.05 });
 
         const wallColor = textureLoader.load('wall_color.jpg');
         const wallNormal = textureLoader.load('wall_normal.jpg');
         const wallRoughness = textureLoader.load('wall_roughness.jpg');
-        [wallColor, wallNormal, wallRoughness].forEach(tex => { tex.wrapS = THREE.RepeatWrapping; tex.wrapT = THREE.RepeatWrapping; tex.repeat.set(6, 6); });
+        [wallColor, wallNormal, wallRoughness].forEach(tex => { tex.wrapS = THREE.RepeatWrapping; tex.wrapT = THREE.RepeatWrapping; tex.repeat.set(2, 2); });
         const matMainTech = new THREE.MeshStandardMaterial({ map: wallColor, normalMap: wallNormal, roughnessMap: wallRoughness, metalness: 0.0 });
 
         const matWireframe = new THREE.MeshBasicMaterial({ color: 0x2b6cb0, wireframe: true, transparent: true, opacity: 0.1 });
@@ -610,6 +610,7 @@
             board.add(fanSw);
             interactiveMeshes.push(fanSw);
         }
+
         const zInvHodInner = 11.2 + 0.135; // Inside Inventory/HOD (+Z direction)
         const zProfInner = 8.0 - 0.135;    // Inside Prof Room (-Z direction)
         const xHallInner = 4.0 - 0.135;    // Inside Staff Hall (-X direction)
@@ -712,7 +713,6 @@
             }
         });
 
-        // (Leave the book_shelf loader exactly as it is here)
         gltfLoader.load('book_shelf.glb', (gltf) => {
             const shelfClone = gltf.scene; shelfClone.scale.set(0.5, 0.5, 0.5); shelfClone.position.set(2.0, 0, 10.0); shelfClone.rotation.y = Math.PI;
             shelfClone.traverse((child) => { if (child.isMesh) { child.castShadow = true; child.receiveShadow = true; } }); scene.add(shelfClone);
@@ -725,6 +725,7 @@
             plasticChair.position.set(3.4, 0, 4.0); plasticChair.rotation.y = -Math.PI / 4;
             plasticChair.traverse((child) => { if (child.isMesh) child.material = new THREE.MeshBasicMaterial({ color: "#4282c8" }); }); scene.add(plasticChair);
         });
+
         // 8. OVERHEAD TEXT LABELS
         function addRoomLabel(text, x, y, z) {
             const labelDiv = document.createElement('div'); labelDiv.className = 'label'; labelDiv.textContent = text;
@@ -770,7 +771,15 @@
         // --- HARDWARE ACTUATION PIPELINE ---
         const fanStatusText = document.getElementById('fan-status-text');
         const lightStatusText = document.getElementById('light-status-text');
+        const fanToggleBtn = document.getElementById('fan-toggle-btn');
+        const lightToggleBtn = document.getElementById('light-toggle-btn');
+
+        // --- ADD YOUR FIREBASE URL HERE ---
         const FIREBASE_URL = "https://YOUR-FIREBASE-PROJECT.firebasedatabase.app/appliances.json";
+
+        // RE-ATTACH THE LISTENERS SO HOTKEYS AND MOUSE CLICKS WORK
+        fanToggleBtn.addEventListener('click', () => triggerFan(activeZone));
+        lightToggleBtn.addEventListener('click', () => triggerLight(activeZone));
 
         function updateDirectoryUI() {
             const dir = roomDirectory[activeZone];
@@ -789,13 +798,17 @@
             const state = roomsData[activeZone];
             if (state.fanRunning) {
                 fanStatusText.innerText = "RUNNING"; fanStatusText.style.color = "#38a169";
+                fanToggleBtn.innerText = "STOP EXHAUST FAN";
             } else {
                 fanStatusText.innerText = "OFF"; fanStatusText.style.color = "#718096";
+                fanToggleBtn.innerText = "TOGGLE EXHAUST FAN";
             }
             if (state.lightOn) {
                 lightStatusText.innerText = "ACTIVE [ILLUMINATED]"; lightStatusText.style.color = "#ecc94b";
+                lightToggleBtn.innerText = "DEACTIVATE ROOM LIGHT";
             } else {
                 lightStatusText.innerText = "OFF"; lightStatusText.style.color = "#718096";
+                lightToggleBtn.innerText = "TOGGLE ROOM LIGHT";
             }
         }
 
@@ -837,6 +850,8 @@
 
         document.addEventListener('keydown', (event) => {
             if (event.code === 'KeyC') document.getElementById('camera-toggle').click();
+            if (event.code === 'KeyF') document.getElementById('fan-toggle-btn').click();
+            if (event.code === 'KeyL') document.getElementById('light-toggle-btn').click();
 
             if (event.code === 'KeyH') {
                 uiHidden = !uiHidden;
