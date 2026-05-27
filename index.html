@@ -262,7 +262,7 @@
             inventory: { title: "INVENTORY", personnel: ["Admin: Facility Manager"] },
             hod: { title: "HOD OFFICE", personnel: ["HOD: Dr. Ajitha"] },
             prof: { title: "PROF. ROOM", personnel: ["Dr. Manjunath"] },
-            hall: { title: "STAFF HALL", personnel: ["Prof. Dan Shiju", "Prof. Aman Mathew", "Prof. Kailas Shankar", "Prof. Ashwin"] }
+            hall: { title: "STAFF HALL", personnel: [] }
         };
 
         // --- UPGRADED NAMEPLATE GENERATION (HIGH LEGIBILITY) ---
@@ -754,8 +754,8 @@
         const lightToggleBtn = document.getElementById('light-toggle-btn');
 
         // --- ADD YOUR FIREBASE URL HERE ---
-        const FIREBASE_URL = "https://YOUR-FIREBASE-PROJECT.firebasedatabase.app/appliances.json";
-
+        // --- ADD YOUR FIREBASE URL HERE ---
+        const FIREBASE_URL = "https://mca-digital-twin-default-rtdb.asia-southeast1.firebasedatabase.app/appliances.json";
         // DESKTOP UI EVENT LISTENERS
         fanToggleBtn.addEventListener('click', () => triggerFan(activeZone));
         lightToggleBtn.addEventListener('click', () => triggerLight(activeZone));
@@ -791,15 +791,50 @@
             }
         }
 
+        // async function triggerFan(roomId) {
+        //     const state = roomsData[roomId];
+        //     state.fanRunning = !state.fanRunning;
+        //     if (roomId === activeZone) updateActuatorUI();
+
+        //     if (roomId === 'inventory') {
+        //         try { await fetch(FIREBASE_URL, { method: 'PATCH', body: JSON.stringify({ fan: state.fanRunning }) }); }
+        //         catch (error) { console.warn("Cloud sync failed."); }
+        //     }
+        // }
+
+        // async function triggerLight(roomId) {
+        //     const state = roomsData[roomId];
+        //     state.lightOn = !state.lightOn;
+
+        //     if (state.lightOn) {
+        //         state.pointLight.intensity = 6.0;
+        //         if (state.lightMesh) state.lightMesh.traverse((child) => { if (child.isMesh) { child.material.emissive.setHex(0xffffff); child.material.emissiveIntensity = 3.0; } });
+        //     } else {
+        //         state.pointLight.intensity = 0;
+        //         if (state.lightMesh) state.lightMesh.traverse((child) => { if (child.isMesh) { child.material.emissive.setHex(0x000000); child.material.emissiveIntensity = 0; } });
+        //     }
+
+        //     if (roomId === activeZone) updateActuatorUI();
+
+        //     if (roomId === 'inventory') {
+        //         try { await fetch(FIREBASE_URL, { method: 'PATCH', body: JSON.stringify({ light: state.lightOn }) }); }
+        //         catch (error) { console.warn("Cloud sync failed."); }
+        //     }
+        // }
+
         async function triggerFan(roomId) {
             const state = roomsData[roomId];
             state.fanRunning = !state.fanRunning;
             if (roomId === activeZone) updateActuatorUI();
 
-            if (roomId === 'inventory') {
-                try { await fetch(FIREBASE_URL, { method: 'PATCH', body: JSON.stringify({ fan: state.fanRunning }) }); }
-                catch (error) { console.warn("Cloud sync failed."); }
+            // DYNAMIC UPDATE: Use roomId instead of hardcoded 'inventory'
+            try {
+                await fetch(`https://mca-digital-twin-default-rtdb.asia-southeast1.firebasedatabase.app/appliances/${roomId}.json`, {
+                    method: 'PATCH',
+                    body: JSON.stringify({ fan: state.fanRunning })
+                });
             }
+            catch (error) { console.warn("Cloud sync failed."); }
         }
 
         async function triggerLight(roomId) {
@@ -816,10 +851,14 @@
 
             if (roomId === activeZone) updateActuatorUI();
 
-            if (roomId === 'inventory') {
-                try { await fetch(FIREBASE_URL, { method: 'PATCH', body: JSON.stringify({ light: state.lightOn }) }); }
-                catch (error) { console.warn("Cloud sync failed."); }
+            // DYNAMIC UPDATE: Use roomId instead of hardcoded 'inventory'
+            try {
+                await fetch(`https://mca-digital-twin-default-rtdb.asia-southeast1.firebasedatabase.app/appliances/${roomId}.json`, {
+                    method: 'PATCH',
+                    body: JSON.stringify({ light: state.lightOn })
+                });
             }
+            catch (error) { console.warn("Cloud sync failed."); }
         }
 
         // --- KEYBOARD CONTROLS ---
