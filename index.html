@@ -576,15 +576,29 @@
 
             // Permanent Holographic Quick-Action Menu
             const canvas = document.createElement('canvas');
-            canvas.width = 512; canvas.height = 128;
+            canvas.width = 512;
+            canvas.height = 128;
             const ctx = canvas.getContext('2d');
-            ctx.fillStyle = 'rgba(26, 32, 44, 0.85)'; // Dark slate background
-            ctx.beginPath(); ctx.roundRect(0, 0, 512, 128, 16); ctx.fill();
 
-            ctx.fillStyle = '#ecc94b'; ctx.font = 'bold 40px monospace';
-            ctx.fillText("[ A ] = LIGHT", 30, 80);
+            // Dark slate background
+            ctx.fillStyle = 'rgba(26, 32, 44, 0.85)';
+            ctx.beginPath();
+            ctx.roundRect(0, 0, 512, 128, 16);
+            ctx.fill();
+
+            // Setup global font and vertical centering
+            ctx.font = 'bold 36px monospace';
+            ctx.textBaseline = 'middle'; // Anchors text vertically to the center
+
+            // Left-aligned Light Text
+            ctx.fillStyle = '#ecc94b';
+            ctx.textAlign = 'left';      // Anchor to the left
+            ctx.fillText("[ A ] = LIGHT", 30, 64); // 64 is exactly half of 128
+
+            // Right-aligned Fan Text
             ctx.fillStyle = '#38a169';
-            ctx.fillText("[ X ] = FAN", 270, 80);
+            ctx.textAlign = 'right';     // Anchor to the right
+            ctx.fillText("[ X ] = FAN", 482, 64);  // 482 gives 30px of padding from the right edge (512 - 30)
 
             const tex = new THREE.CanvasTexture(canvas);
             const holoSign = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, transparent: true, depthTest: false }));
@@ -601,6 +615,58 @@
         createSwitchboard('hod', 4.4, 1.4, zInvHodInner, 0);
         createSwitchboard('prof', 9.8, 1.4, zProfInner, Math.PI);
         createSwitchboard('hall', xHallInner, 1.4, 6.8, -Math.PI / 2);
+
+        // --- WAYFINDING / UX ARROWS TO INVENTORY ---
+        const arrowShape = new THREE.Shape();
+        arrowShape.moveTo(0, 0.5);       // Top Tip
+        arrowShape.lineTo(0.4, -0.2);    // Right outer point
+        arrowShape.lineTo(0.15, -0.2);   // Right inner corner
+        arrowShape.lineTo(0.15, -0.6);   // Right base
+        arrowShape.lineTo(-0.15, -0.6);  // Left base
+        arrowShape.lineTo(-0.15, -0.2);  // Left inner corner
+        arrowShape.lineTo(-0.4, -0.2);   // Left outer point
+        arrowShape.lineTo(0, 0.5);       // Close back to tip
+
+        const arrowGeo = new THREE.ShapeGeometry(arrowShape);
+
+        // We use an emissive material matching your UI's blue accent color 
+        // so it stands out against the PBR floor textures.
+        const arrowMat = new THREE.MeshStandardMaterial({
+            color: 0x4299e1,
+            emissive: 0x2b6cb0,
+            emissiveIntensity: 0.8,
+            transparent: true,
+            opacity: 0.85,
+            depthWrite: false // Prevents sorting issues and Z-fighting with the floor
+        });
+
+        function createPathArrow(x, z, angle) {
+            const arrow = new THREE.Mesh(arrowGeo, arrowMat);
+
+            // Lay flat on the floor, elevated slightly (Y: 0.02) to sit on top of the texture
+            arrow.position.set(x, 0.02, z);
+
+            // Rotate to lie flat on the ground
+            arrow.rotation.x = -Math.PI / 2;
+            // Apply directional rotation (pointing towards the target)
+            arrow.rotation.z = angle;
+
+            // Scale to comfortably fit the corridors
+            arrow.scale.set(0.6, 0.6, 0.6);
+
+            scene.add(arrow);
+        }
+
+        // --- DRAWING THE PATH ---
+        // Note: 
+        // angle Math.PI points down the +Z axis (deeper into the building)
+        // angle -Math.PI / 2 points down the +X axis (to the right)
+
+        createPathArrow(5.6, 3.0, Math.PI);        // 1. Up the main V_Corridor
+        createPathArrow(5.6, 6.5, Math.PI);        // 2. Approaching the junction
+        createPathArrow(8.0, 8.5, -Math.PI / 2);   // 3. Turning right into H_Corridor
+        createPathArrow(10.8, 10.5, Math.PI);      // 4. Turning left up towards Inventory
+        createPathArrow(10.8, 12.8, Math.PI);      // 5. Pointing directly at the Inventory door
 
         // --- DYNAMIC ROOF SYSTEM ---
         const roofGroup = new THREE.Group();
