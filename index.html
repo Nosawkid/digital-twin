@@ -531,7 +531,6 @@
             leftGroup.rotation.y = swingL;
             const centerVec = new THREE.Vector3(centerX, doorHeight / 2, centerZ);
 
-            // Re-adding interactability to the right door (for desktop 'E' testing)
             const doorIndex = doors.length;
             rightPanel.userData = { isDoor: true, doorIndex: doorIndex };
             interactiveMeshes.push(rightPanel);
@@ -560,8 +559,6 @@
             board.rotation.y = rotY;
             scene.add(board);
 
-            // Add color-coded physical buttons (No raycaster aiming required in VR anymore)
-            // They are still added to interactiveMeshes so desktop users can press 'E'
             const lightSw = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.08, 0.02), new THREE.MeshStandardMaterial({ color: 0xecc94b }));
             lightSw.position.set(0, 0.06, 0.025);
             lightSw.userData = { isSwitch: true, type: 'light', room: roomId };
@@ -574,43 +571,40 @@
             board.add(fanSw);
             interactiveMeshes.push(fanSw);
 
-            // Permanent Holographic Quick-Action Menu
+            // Permanent Holographic Quick-Action Menu (Fixed Text Alignment)
             const canvas = document.createElement('canvas');
             canvas.width = 512;
             canvas.height = 128;
             const ctx = canvas.getContext('2d');
 
-            // Dark slate background
             ctx.fillStyle = 'rgba(26, 32, 44, 0.85)';
             ctx.beginPath();
             ctx.roundRect(0, 0, 512, 128, 16);
             ctx.fill();
 
-            // Setup global font and vertical centering
             ctx.font = 'bold 36px monospace';
-            ctx.textBaseline = 'middle'; // Anchors text vertically to the center
+            ctx.textBaseline = 'middle';
 
-            // Left-aligned Light Text
             ctx.fillStyle = '#ecc94b';
-            ctx.textAlign = 'left';      // Anchor to the left
-            ctx.fillText("[ A ] = LIGHT", 30, 64); // 64 is exactly half of 128
+            ctx.textAlign = 'left';
+            ctx.fillText("[ A ] = LIGHT", 30, 64);
 
-            // Right-aligned Fan Text
             ctx.fillStyle = '#38a169';
-            ctx.textAlign = 'right';     // Anchor to the right
-            ctx.fillText("[ X ] = FAN", 482, 64);  // 482 gives 30px of padding from the right edge (512 - 30)
+            ctx.textAlign = 'right';
+            ctx.fillText("[ X ] = FAN", 482, 64);
 
             const tex = new THREE.CanvasTexture(canvas);
             const holoSign = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, transparent: true, depthTest: false }));
             holoSign.scale.set(0.9, 0.22, 1.0);
-            holoSign.position.set(0, 0.35, 0); // Floating slightly above the switchboard
+            holoSign.position.set(0, 0.35, 0);
             board.add(holoSign);
         }
 
         const zInvHodInner = 11.2 + 0.135;
-        const zProfInner = 8.0 - 0.135;
-        const xHallInner = 4.0 - 0.135;
+        // const zProfInner = 8.0 - 0.135;
+        // const xHallInner = 4.0 - 0.135;
 
+        // Displaying only in Inventory for physical hardware PoC demo focus
         createSwitchboard('inventory', 9.8, 1.4, zInvHodInner, 0);
         // createSwitchboard('hod', 4.4, 1.4, zInvHodInner, 0);
         // createSwitchboard('prof', 9.8, 1.4, zProfInner, Math.PI);
@@ -618,55 +612,41 @@
 
         // --- WAYFINDING / UX ARROWS TO INVENTORY ---
         const arrowShape = new THREE.Shape();
-        arrowShape.moveTo(0, 0.5);       // Top Tip
-        arrowShape.lineTo(0.4, -0.2);    // Right outer point
-        arrowShape.lineTo(0.15, -0.2);   // Right inner corner
-        arrowShape.lineTo(0.15, -0.6);   // Right base
-        arrowShape.lineTo(-0.15, -0.6);  // Left base
-        arrowShape.lineTo(-0.15, -0.2);  // Left inner corner
-        arrowShape.lineTo(-0.4, -0.2);   // Left outer point
-        arrowShape.lineTo(0, 0.5);       // Close back to tip
+        arrowShape.moveTo(0, 0.5);
+        arrowShape.lineTo(0.4, -0.2);
+        arrowShape.lineTo(0.15, -0.2);
+        arrowShape.lineTo(0.15, -0.6);
+        arrowShape.lineTo(-0.15, -0.6);
+        arrowShape.lineTo(-0.15, -0.2);
+        arrowShape.lineTo(-0.4, -0.2);
+        arrowShape.lineTo(0, 0.5);
 
         const arrowGeo = new THREE.ShapeGeometry(arrowShape);
-
-        // We use an emissive material matching your UI's blue accent color 
-        // so it stands out against the PBR floor textures.
         const arrowMat = new THREE.MeshStandardMaterial({
             color: 0x4299e1,
             emissive: 0x2b6cb0,
             emissiveIntensity: 0.8,
             transparent: true,
             opacity: 0.85,
-            depthWrite: false // Prevents sorting issues and Z-fighting with the floor
+            depthWrite: false
         });
 
         function createPathArrow(x, z, angle) {
             const arrow = new THREE.Mesh(arrowGeo, arrowMat);
-
-            // Lay flat on the floor, elevated slightly (Y: 0.02) to sit on top of the texture
             arrow.position.set(x, 0.02, z);
-
-            // Rotate to lie flat on the ground
             arrow.rotation.x = -Math.PI / 2;
-            // Apply directional rotation (pointing towards the target)
             arrow.rotation.z = angle;
-
-            // Scale to comfortably fit the corridors
             arrow.scale.set(0.6, 0.6, 0.6);
-
             scene.add(arrow);
         }
 
         // --- DRAWING THE PATH ---
-        // Note: 
-        // angle Math.PI points down the +Z axis (deeper into the building)
-        // angle -Math.PI / 2 points down the +X axis (to the right)
-
-        createPathArrow(5.6, 3.0, Math.PI);        // 1. Up the main V_Corridor
-        createPathArrow(5.6, 6.5, Math.PI);        // 2. Approaching the junction
-        createPathArrow(8.0, 8.5, -Math.PI / 2);   // 3. Turning right into H_Corridor
-        createPathArrow(10.8, 10.5, Math.PI);      // 4. Turning left up towards Inventory
-        createPathArrow(10.8, 12.8, Math.PI);      // 5. Pointing directly at the Inventory door
+        createPathArrow(5.6, 3.5, Math.PI);        // Straight from main entryway
+        createPathArrow(5.6, 7.0, Math.PI);        // Approaching junction
+        createPathArrow(7.5, 9.6, -Math.PI / 2);   // Turn right, centered in H_Corridor
+        createPathArrow(9.5, 9.6, -Math.PI / 2);   // Moving down H_Corridor
+        createPathArrow(10.8, 10.5, Math.PI);      // Turn left, facing Inventory
+        createPathArrow(10.8, 12.5, Math.PI);      // Pointing at Inventory doors
 
         // --- DYNAMIC ROOF SYSTEM ---
         const roofGroup = new THREE.Group();
@@ -708,7 +688,7 @@
             roomsData[roomId] = { fanRunning: false, lightOn: false, fanMesh: null, lightMesh: null, pointLight: pLight };
         }
 
-        // 7. GLTF MODELS (Correctly scaled)
+        // 7. GLTF MODELS
         const gltfLoader = new GLTFLoader();
         gltfLoader.load('ceiling_fan.glb', (gltf) => {
             for (const [roomId, coords] of Object.entries(roomCoordinates)) {
@@ -739,7 +719,7 @@
         gltfLoader.load('desk_low-poly.glb', (gltf) => {
             for (const [roomId, coords] of Object.entries(roomCoordinates)) {
                 const deskClone = gltf.scene.clone();
-                deskClone.scale.set(0.003, 0.003, 0.003); // Scaled
+                deskClone.scale.set(0.003, 0.003, 0.003);
                 deskClone.position.set(coords.x - 0.6, 0, coords.z + 0.8);
                 if (roomId === 'prof') deskClone.rotation.y = Math.PI / 2; else if (roomId === 'hod') deskClone.rotation.y = Math.PI; else deskClone.rotation.y = -Math.PI / 2;
                 deskClone.traverse((child) => { if (child.isMesh) { child.castShadow = true; child.receiveShadow = true; } });
@@ -751,7 +731,7 @@
             for (const [roomId, coords] of Object.entries(roomCoordinates)) {
                 if (roomId === 'prof') continue;
                 const chairClone = gltf.scene.clone();
-                chairClone.scale.set(0.0075, 0.0075, 0.0075); // Scaled
+                chairClone.scale.set(0.0075, 0.0075, 0.0075);
                 const deskX = coords.x - 0.8; const deskZ = coords.z + 0.8;
                 if (roomId === 'hod') { chairClone.position.set(deskX - 0.7, 0, deskZ - 0.7); chairClone.rotation.y = Math.PI / 2; } else if (roomId === 'inventory') { chairClone.position.set(deskX, 0, deskZ + 0.7); chairClone.rotation.y = Math.PI; } else if (roomId === 'hall') { chairClone.position.set(deskX + 0.7, 0, deskZ + 0.7); chairClone.rotation.y = Math.PI; }
                 chairClone.traverse((child) => { if (child.isMesh) { child.castShadow = true; child.receiveShadow = true; } });
@@ -766,7 +746,7 @@
 
         gltfLoader.load('plastic_chair.glb', (gltf) => {
             const plasticChair = gltf.scene;
-            plasticChair.scale.set(0.7, 0.7, 0.7); // Scaled
+            plasticChair.scale.set(0.7, 0.7, 0.7);
             plasticChair.position.set(3.4, 0, 4.0); plasticChair.rotation.y = -Math.PI / 4;
             plasticChair.traverse((child) => { if (child.isMesh) child.material = new THREE.MeshBasicMaterial({ color: "#4282c8" }); }); scene.add(plasticChair);
         });
@@ -819,10 +799,6 @@
         const fanToggleBtn = document.getElementById('fan-toggle-btn');
         const lightToggleBtn = document.getElementById('light-toggle-btn');
 
-        // --- ADD YOUR FIREBASE URL HERE ---
-        // --- ADD YOUR FIREBASE URL HERE ---
-        const FIREBASE_URL = "https://mca-digital-twin-default-rtdb.asia-southeast1.firebasedatabase.app/appliances.json";
-        // DESKTOP UI EVENT LISTENERS
         fanToggleBtn.addEventListener('click', () => triggerFan(activeZone));
         lightToggleBtn.addEventListener('click', () => triggerLight(activeZone));
 
@@ -857,43 +833,11 @@
             }
         }
 
-        // async function triggerFan(roomId) {
-        //     const state = roomsData[roomId];
-        //     state.fanRunning = !state.fanRunning;
-        //     if (roomId === activeZone) updateActuatorUI();
-
-        //     if (roomId === 'inventory') {
-        //         try { await fetch(FIREBASE_URL, { method: 'PATCH', body: JSON.stringify({ fan: state.fanRunning }) }); }
-        //         catch (error) { console.warn("Cloud sync failed."); }
-        //     }
-        // }
-
-        // async function triggerLight(roomId) {
-        //     const state = roomsData[roomId];
-        //     state.lightOn = !state.lightOn;
-
-        //     if (state.lightOn) {
-        //         state.pointLight.intensity = 6.0;
-        //         if (state.lightMesh) state.lightMesh.traverse((child) => { if (child.isMesh) { child.material.emissive.setHex(0xffffff); child.material.emissiveIntensity = 3.0; } });
-        //     } else {
-        //         state.pointLight.intensity = 0;
-        //         if (state.lightMesh) state.lightMesh.traverse((child) => { if (child.isMesh) { child.material.emissive.setHex(0x000000); child.material.emissiveIntensity = 0; } });
-        //     }
-
-        //     if (roomId === activeZone) updateActuatorUI();
-
-        //     if (roomId === 'inventory') {
-        //         try { await fetch(FIREBASE_URL, { method: 'PATCH', body: JSON.stringify({ light: state.lightOn }) }); }
-        //         catch (error) { console.warn("Cloud sync failed."); }
-        //     }
-        // }
-
         async function triggerFan(roomId) {
             const state = roomsData[roomId];
             state.fanRunning = !state.fanRunning;
             if (roomId === activeZone) updateActuatorUI();
 
-            // DYNAMIC UPDATE: Use roomId instead of hardcoded 'inventory'
             try {
                 await fetch(`https://mca-digital-twin-default-rtdb.asia-southeast1.firebasedatabase.app/appliances/${roomId}.json`, {
                     method: 'PATCH',
@@ -917,7 +861,6 @@
 
             if (roomId === activeZone) updateActuatorUI();
 
-            // DYNAMIC UPDATE: Use roomId instead of hardcoded 'inventory'
             try {
                 await fetch(`https://mca-digital-twin-default-rtdb.asia-southeast1.firebasedatabase.app/appliances/${roomId}.json`, {
                     method: 'PATCH',
@@ -927,6 +870,34 @@
             catch (error) { console.warn("Cloud sync failed."); }
         }
 
+        // --- LIVE VR SPECTATOR TRACKING (TELEMETRY) ---
+        const vrMarkerMat = new THREE.MeshBasicMaterial({ color: 0xe53e3e, wireframe: true, transparent: true, opacity: 0.8 });
+        const vrMarker = new THREE.Mesh(new THREE.CylinderGeometry(0.3, 0.3, 1.6, 16), vrMarkerMat);
+        vrMarker.position.set(7.2, 0.8, 9.6);
+        scene.add(vrMarker);
+
+        setInterval(async () => {
+            const telemetryUrl = "https://mca-digital-twin-default-rtdb.asia-southeast1.firebasedatabase.app/telemetry.json";
+
+            if (renderer.xr.isPresenting) {
+                try {
+                    await fetch(telemetryUrl, {
+                        method: 'PATCH',
+                        body: JSON.stringify({ x: cameraRig.position.x, z: cameraRig.position.z })
+                    });
+                } catch (e) { console.warn("Telemetry push failed"); }
+            } else {
+                try {
+                    const res = await fetch(telemetryUrl);
+                    const data = await res.json();
+                    if (data && data.x !== undefined && data.z !== undefined) {
+                        vrMarker.position.x = data.x;
+                        vrMarker.position.z = data.z;
+                    }
+                } catch (e) { console.warn("Telemetry fetch failed"); }
+            }
+        }, 1000);
+
         // --- KEYBOARD CONTROLS ---
         let uiHidden = false;
         let moveForward = false, moveBackward = false, moveLeft = false, moveRight = false;
@@ -935,7 +906,6 @@
         document.addEventListener('keydown', (event) => {
             if (event.code === 'KeyC') document.getElementById('camera-toggle').click();
 
-            // Developer Failsafe Hotkeys mapped to active zone
             if (event.code === 'KeyF') triggerFan(activeZone);
             if (event.code === 'KeyL') triggerLight(activeZone);
 
@@ -950,7 +920,6 @@
                 document.getElementById('blocker').style.display = 'none';
             }
 
-            // Desktop "E" to Interact (Still supports physical switch clicks)
             if (event.code === 'KeyE' && currentMode === 'FP' && fpControls.isLocked) {
                 const desktopRaycaster = new THREE.Raycaster();
                 desktopRaycaster.setFromCamera(new THREE.Vector2(0, 0), camera);
@@ -1053,7 +1022,6 @@
                             if (source.handedness === 'left') {
                                 if (Math.abs(source.gamepad.axes[3]) > 0.1) vrMoveZ = -source.gamepad.axes[3];
 
-                                // QUICK ACTION: 'X' BUTTON FOR FAN
                                 if (source.gamepad.buttons[4]?.pressed) {
                                     if (!leftFaceBtnPressed) { triggerFan(activeZone); leftFaceBtnPressed = true; }
                                 } else { leftFaceBtnPressed = false; }
@@ -1062,7 +1030,6 @@
                             if (source.handedness === 'right') {
                                 if (Math.abs(source.gamepad.axes[2]) > 0.1) vrMoveX = source.gamepad.axes[2];
 
-                                // QUICK ACTION: 'A' BUTTON FOR LIGHT
                                 if (source.gamepad.buttons[4]?.pressed) {
                                     if (!rightFaceBtnPressed) { triggerLight(activeZone); rightFaceBtnPressed = true; }
                                 } else { rightFaceBtnPressed = false; }
@@ -1086,11 +1053,9 @@
             // Door Proximity & Animation
             for (let i = 0; i < doors.length; i++) {
                 const door = doors[i];
-
-                // Allow manual toggle OR proximity logic
                 const distance = camera.getWorldPosition(new THREE.Vector3()).distanceTo(door.center);
-                if (distance < 2.0 && !door.isOpen) door.isOpen = true; // Auto open if very close
-                else if (distance > 3.0 && door.isOpen) door.isOpen = false; // Auto close if walked away
+                if (distance < 2.0 && !door.isOpen) door.isOpen = true;
+                else if (distance > 3.0 && door.isOpen) door.isOpen = false;
 
                 const targetRot = door.isOpen ? door.openRot : door.closedRot;
                 door.group.rotation.y += (targetRot - door.group.rotation.y) * 5.0 * delta;
